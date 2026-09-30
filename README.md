@@ -5,8 +5,9 @@ expected-value numbers behind each recommendation.
 
 ## Status
 
-Phase 1, in progress: `$oc` solver with the board typed in by hand. The solver's
-expected values are verified by simulation; the Discord bot is next.
+Phase 1: `$oc` solver with the board typed in through a `/oc` slash command. The
+solver's expected values are verified by simulation. The bot replies with a rendered
+board showing the best click.
 
 ## `$oc` rules as modeled
 
@@ -59,6 +60,17 @@ all 8 copies share one computation.
 Tests check that all 16,800 legal boards and their probabilities are unchanged by
 each symmetry (a fake "symmetry" that shifts the board fails this), and that the
 solver returns identical values and moves with and without it.
+
+## Running the bot
+
+1. Create a bot at discord.com/developers/applications and invite it with the
+   `bot` and `applications.commands` scopes.
+2. Copy `.env.example` to `.env` and fill in `DISCORD_TOKEN` (and, for development,
+   `DISCORD_GUILD_ID` so commands appear in your test server immediately).
+3. `python -m src.bot.main`
+
+Then type `/oc board: D4R B2T` in Discord: cells as row letter + column number, colors
+as R O Y G T B. Leave `board` empty for a new game.
 
 ## Development
 

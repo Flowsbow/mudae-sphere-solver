@@ -1,4 +1,6 @@
+discord.py>=2.3,<3
 numpy>=1.26
 pillow>=10.1
 pytest>=8
+python-dotenv>=1.0
 ruff>=0.5

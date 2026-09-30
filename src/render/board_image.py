@@ -1,6 +1,4 @@
 import io
-import math
-import random
 from collections.abc import Mapping
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -12,13 +10,12 @@ from src.solver.board import (
     SIZE,
     BoardState,
     Color,
-    cell_name,
 )
 from src.solver.ev import Analysis
 
 # Look chosen by Flow from rendered mockups, 2026-09-28 ("design B").
 SCALE = 2
-TILE, GAP, PAD, LABEL, FOOTER = 64, 6, 16, 22, 48
+TILE, GAP, PAD, LABEL = 64, 6, 16, 22
 BACKGROUND = (30, 31, 34)
 TILE_COLOR = (43, 45, 49)
 TEXT = (220, 221, 222)
@@ -26,14 +23,17 @@ DIM = (140, 142, 150)
 HEAT = (250, 204, 21)
 BEST_OUTLINE = (255, 255, 255)
 GEM = {
-    Color.BLUE: (70, 110, 240),
-    Color.TEAL: (30, 190, 195),
-    Color.GREEN: (50, 200, 70),
-    Color.YELLOW: (240, 210, 40),
-    Color.ORANGE: (250, 130, 30),
-    Color.RED: (225, 25, 35),
+    Color.BLUE: (40, 120, 230),
+    Color.TEAL: (0, 185, 195),
+    Color.GREEN: (60, 190, 70),
+    Color.YELLOW: (250, 200, 40),
+    Color.ORANGE: (250, 140, 20),
+    Color.RED: (230, 40, 45),
 }
-GOLD_LIGHT, GOLD_MID, GOLD_DARK = (255, 222, 120), (214, 158, 48), (120, 74, 18)
+LETTER = {color: color.name[0] for color in Color}
+# Darkened so white letters stay readable on yellow and teal blocks.
+BLOCK_DARKEN = 0.25
+GOLD_MID, GOLD_DARK = (222, 172, 58), (140, 96, 28)
 
 
 def click_values(
@@ -46,11 +46,13 @@ def click_values(
 
 
 def render(
-    state: BoardState, analysis: Analysis, payouts: Mapping[Color, float]
+    state: BoardState,
+    analysis: Analysis,
+    payouts: Mapping[Color, float],
+    letters: bool = False,
 ) -> bytes:
-    width = PAD * 2 + LABEL + SIZE * TILE + (SIZE - 1) * GAP
-    height = width + FOOTER
-    img = Image.new("RGB", (width * SCALE, height * SCALE), BACKGROUND)
+    size = PAD * 2 + LABEL + SIZE * TILE + (SIZE - 1) * GAP
+    img = Image.new("RGB", (size * SCALE, size * SCALE), BACKGROUND)
     draw = ImageDraw.Draw(img)
 
     for i in range(SIZE):
@@ -68,8 +70,21 @@ def render(
         cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
         color = state.revealed[cell]
         if color is not None:
-            draw.rounded_rectangle([x0, y0, x1, y1], radius=_px(8), fill=TILE_COLOR)
-            _gem(img, cx, cy, _px(20), GEM[color], seed=cell)
+            if letters:
+                block = _mix(GEM[color], (0, 0, 0), BLOCK_DARKEN)
+                draw.rounded_rectangle([x0, y0, x1, y1], radius=_px(8), fill=block)
+                draw.text(
+                    (cx, cy),
+                    LETTER[color],
+                    fill=(255, 255, 255),
+                    font=_font(30),
+                    anchor="mm",
+                    stroke_width=_px(1),
+                    stroke_fill=(255, 255, 255),
+                )
+            else:
+                draw.rounded_rectangle([x0, y0, x1, y1], radius=_px(8), fill=TILE_COLOR)
+                _gem(img, cx, cy, _px(20), GEM[color], seed=cell)
             continue
         heat = (
             (totals[cell] - low) / (high - low) if high > low and cell in totals else 0
@@ -86,17 +101,7 @@ def render(
         ink = BACKGROUND if heat > 0.55 else TEXT
         draw.text((cx, cy), f"+{plus[cell]:.0f}", fill=ink, font=_font(17), anchor="mm")
 
-    footer_y = _px(height - FOOTER + 16)
-    if analysis.best is None:
-        line = "No clicks left"
-    else:
-        line = (
-            f"Click {cell_name(analysis.best)}  ·  {analysis.value:.1f} expected over "
-            f"{analysis.clicks_left} click{'s' if analysis.clicks_left != 1 else ''}"
-        )
-    draw.text((_px(PAD), footer_y), line, fill=TEXT, font=_font(15))
-
-    img = img.resize((width, height), Image.LANCZOS)
+    img = img.resize((size, size), Image.LANCZOS)
     out = io.BytesIO()
     img.save(out, format="PNG")
     return out.getvalue()
@@ -130,52 +135,25 @@ def _disc(size: tuple[int, int], cx: int, cy: int, r: int) -> Image.Image:
 
 def _gem(img: Image.Image, cx: int, cy: int, r: int, color: tuple[int, ...], seed: int):
     w, h = img.size
-    ring = Image.new("RGB", img.size)
-    px = ring.load()
-    for y in range(max(0, cy - r), min(h, cy + r + 1)):
-        for x in range(max(0, cx - r), min(w, cx + r + 1)):
-            t = ((x - cx) + (y - cy)) / (2 * r) + 0.5
-            if t > 0.45:
-                px[x, y] = _mix(GOLD_LIGHT, GOLD_DARK, t)
-            else:
-                px[x, y] = _mix(GOLD_LIGHT, GOLD_MID, 1 - t / 0.45)
-    img.paste(ring, mask=_disc(img.size, cx, cy, r))
     draw = ImageDraw.Draw(img)
-    draw.ellipse(
-        [cx - r, cy - r, cx + r, cy + r], outline=(60, 36, 8), width=max(1, r // 12)
-    )
-    inner = int(r * 0.74)
-    lip = inner + max(1, r // 14)
-    draw.ellipse([cx - lip, cy - lip, cx + lip, cy + lip], fill=(70, 40, 10))
+    draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=GOLD_DARK)
+    ring = int(r * 0.93)
+    draw.ellipse([cx - ring, cy - ring, cx + ring, cy + ring], fill=GOLD_MID)
 
-    core = _mix(color, (255, 255, 255), 0.22)
-    edge = tuple(int(c * 0.22) for c in color)
+    inner = int(r * 0.78)
+    top = _mix(color, (255, 255, 255), 0.18)
+    bottom = _mix(color, (0, 0, 0), 0.28)
     body = Image.new("RGB", img.size)
     bp = body.load()
-    gx, gy, gr = cx - inner // 6, cy - inner // 6, int(inner * 1.15)
     for y in range(max(0, cy - inner), min(h, cy + inner + 1)):
+        t = (y - (cy - inner)) / (2 * inner)
+        row = _mix(top, bottom, t)
         for x in range(max(0, cx - inner), min(w, cx + inner + 1)):
-            bp[x, y] = _mix(core, edge, (math.hypot(x - gx, y - gy) / gr) ** 0.9)
-
-    rng = random.Random(seed)
-    sparkle = Image.new("L", img.size, 0)
-    sd = ImageDraw.Draw(sparkle)
-    for _ in range(int(inner * 1.2)):
-        angle = rng.uniform(0, 2 * math.pi)
-        dist = inner * rng.random() ** 0.6
-        sx, sy = cx + dist * math.cos(angle), cy + dist * math.sin(angle)
-        s = rng.uniform(0.5, 1.6) * r / 18
-        sd.ellipse([sx - s, sy - s, sx + s, sy + s], fill=rng.randint(25, 70))
-    body.paste(
-        _mix(color, (255, 255, 255), 0.35),
-        mask=sparkle.filter(ImageFilter.GaussianBlur(r / 30)),
-    )
+            bp[x, y] = row
     img.paste(body, mask=_disc(img.size, cx, cy, inner))
 
     shine = Image.new("L", img.size, 0)
-    hr = int(inner * 0.30)
-    hx, hy = cx - int(inner * 0.38), cy - int(inner * 0.40)
-    ImageDraw.Draw(shine).ellipse(
-        [hx - hr, hy - int(hr * 0.65), hx + hr, hy + int(hr * 0.65)], fill=170
-    )
-    img.paste((255, 255, 255), mask=shine.filter(ImageFilter.GaussianBlur(r * 0.07)))
+    sw, sh = int(inner * 0.62), int(inner * 0.34)
+    sy = cy - int(inner * 0.50)
+    ImageDraw.Draw(shine).ellipse([cx - sw, sy - sh, cx + sw, sy + sh], fill=140)
+    img.paste((255, 255, 255), mask=shine.filter(ImageFilter.GaussianBlur(r * 0.08)))
