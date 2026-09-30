@@ -63,7 +63,7 @@ Tests check that all 16,800 legal boards and their probabilities are unchanged b
 each symmetry (a fake "symmetry" that shifts the board fails this), and that the
 solver returns identical values and moves with and without it.
 
-**Prefer a visual representation?**
+**<ins>Prefer a visual representation?</ins>**
 
 ![A real board turned and mirrored four ways; every copy still follows the rules](docs/images/symmetry_rules.png)
 
