@@ -70,7 +70,7 @@ solver returns identical values and moves with and without it.
 3. `python -m src.bot.main`
 
 Then type `/oc board: D4R B2T` in Discord: cells as row letter + column number, colors
-as R O Y G T B. Leave `board` empty for a new game.
+as R O Y G T B. For a new game, send just `/oc` without adding `board`.
 
 **Auto mode:** run `/oc auto: on`, then play `$oc` as usual. The bot reads Mudae's
 board buttons directly (no image recognition), replies with the best click, and

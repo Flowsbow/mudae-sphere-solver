@@ -289,7 +289,7 @@ def toggle_colorblind(service: OcService, user_id: int) -> str:
 def register(tree: app_commands.CommandTree, service: OcService) -> None:
     @tree.command(name="oc", description="Best next click for a $oc board")
     @app_commands.describe(
-        board="Revealed cells, e.g. D4R B2T (R O Y G T B). Leave empty for a new game.",
+        board="Revealed cells, e.g. D4R B2T (R O Y G T B). Skip for a new game.",
         auto="Solve your Mudae $oc games automatically.",
     )
     async def oc(
