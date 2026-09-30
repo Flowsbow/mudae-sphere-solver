@@ -78,6 +78,9 @@ updates its reply every time you click. This needs **Message Content Intent**
 enabled on the bot's page in the Discord developer portal. You can also right-click
 any Mudae board → Apps → **Solve sphere board**.
 
+**Colorblind mode:** `/colorblindmode` toggles lettered color blocks (B T G Y O R)
+instead of spheres, for your boards from then on.
+
 ## Development
 
 ```

@@ -6,7 +6,13 @@ from dataclasses import dataclass, field
 import discord
 
 from src.bot.commands import BoardView, OcService, solve_and_draw
-from src.bot.mudae_reader import MUDAE_ID, NotAnOcBoardError, read_oc_board
+from src.bot.mudae_reader import (
+    MUDAE_ID,
+    MudaeBoard,
+    NotAnOcBoardError,
+    read_oc_board,
+)
+from src.solver.board import BoardState
 
 # "$oc" with Mudae's default "$" prefix, optionally followed by an argument
 # ("$oc 2" in Flow's 2026-09-26 screenshot). Servers can change Mudae's prefix.
@@ -62,8 +68,9 @@ class AutoTracker:
         if owner is None:
             return
         self._forget_old_games()
-        view = BoardView(self.service, board.state, owner)
-        embed, file = await solve_and_draw(self.service, board.state, view.letters)
+        letters = self.service.letters_for.get(owner, False)
+        embed, file, analysis = await solve_and_draw(self.service, board.state, letters)
+        view = BoardView(self.service, board.state, owner, analysis, manual=False)
         reply = await message.reply(
             embed=embed, file=file, view=view, mention_author=False
         )
@@ -80,29 +87,37 @@ class AutoTracker:
             return
         async with game.lock:
             if board.finished:
-                await self._finish(after.id, game)
+                await self._finish(after.id, game, board)
                 return
             if board.state == game.view.state:
                 return
-            embed, file = await solve_and_draw(
+            embed, file, analysis = await solve_and_draw(
                 self.service, board.state, game.view.letters
             )
-            game.view.state = board.state
+            game.view.advance(board.state, analysis)
             game.view.refresh()
             game.embed = embed
             game.reply = await game.reply.edit(
                 embed=embed, attachments=[file], view=game.view
             )
 
-    async def _finish(self, message_id: int, game: AutoGame) -> None:
+    async def _finish(self, message_id: int, game: AutoGame, board: MudaeBoard) -> None:
         self.games.pop(message_id, None)
-        game.view.stop()
-        for item in game.view.children:
-            item.disabled = True
-        embed = game.embed.copy()
-        embed.title = "Game over"
-        embed.description = "The board shows the solver's last recommendation."
-        await game.reply.edit(embed=embed, view=game.view)
+        view = game.view
+        clicked_state = BoardState(
+            tuple(
+                color if cell in board.clicked else None
+                for cell, color in enumerate(board.state.revealed)
+            )
+        )
+        if board.clicked:
+            view.advance(clicked_state)
+            clicked = board.clicked
+        else:
+            clicked = frozenset(step.cell for step in view.history)
+        embed, file = view.finish(board.state.revealed, clicked)
+        view.refresh()
+        game.reply = await game.reply.edit(embed=embed, attachments=[file], view=view)
 
     def _forget_old_games(self) -> None:
         now = time.monotonic()

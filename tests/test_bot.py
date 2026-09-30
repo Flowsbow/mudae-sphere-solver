@@ -101,12 +101,18 @@ def _view(service, text, owner=1):
     return asyncio.run(make())
 
 
-def test_view_has_the_add_a_sphere_and_colorblind_buttons(service):
+def test_manual_view_has_only_the_add_a_sphere_button(service):
     view = _view(service, "D4R", owner=99)
-    add, colorblind = view.children
+    (add,) = view.children
     assert add.label == "Add a sphere"
     assert not add.disabled
-    assert colorblind.label == "Colorblind: Off"
+
+
+def test_auto_view_has_no_buttons(service):
+    async def make():
+        return BoardView(service, BoardState.parse("D4R"), 99, manual=False)
+
+    assert asyncio.run(make()).children == []
 
 
 def test_button_is_disabled_once_all_clicks_are_used(service):
@@ -184,20 +190,19 @@ def test_a_typo_in_the_popup_gets_a_private_error_and_no_edit(service):
     assert view.state == BoardState.parse("B2T")
 
 
-def test_colorblind_button_redraws_the_same_message_and_is_remembered(service):
-    async def run():
-        view = BoardView(service, BoardState.parse("D4R B2T"), 7)
-        interaction = _FakeModalInteraction(7)
-        await view.colorblind.callback(interaction)
-        return view, interaction
+def test_colorblindmode_toggles_and_applies_to_later_boards(service):
+    tree = app_commands.CommandTree(discord.Client(intents=discord.Intents.default()))
+    register(tree, service)
+    command = tree.get_command("colorblindmode")
+    assert command.parameters == []
+    interaction = _FakeInteraction(7)
 
-    view, interaction = asyncio.run(run())
-    (edit,) = interaction.edits
-    assert view.letters
-    assert view.colorblind.label == "Colorblind: On"
-    assert edit["attachments"][0].filename == IMAGE_NAME
+    asyncio.run(command.callback(interaction))
     assert service.letters_for[7] is True
     assert _view(service, "A1B", owner=7).letters
+    asyncio.run(command.callback(interaction))
+    assert service.letters_for[7] is False
+    assert all(ephemeral for _, ephemeral in interaction.response.sent)
     service.letters_for.pop(7)
 
 
@@ -283,3 +288,25 @@ def test_right_click_on_someone_elses_message_is_refused(service):
     interaction = _right_click_solve(service, _mudae_message("oc_fresh.txt", 1))
     assert interaction.followup.sent == []
     assert "isn't from Mudae" in interaction.response.sent[0][0]
+
+
+def test_fifth_sphere_in_the_popup_shows_the_stats_screen(service):
+    async def run():
+        state = BoardState.parse("D4R D5O E4O C5Y")
+        analysis = await service.analyze(state)
+        view = BoardView(service, state, 1, analysis)
+        modal = AddSphereModal(view)
+        modal.sphere._value = "E3 Y"
+        interaction = _FakeModalInteraction(1)
+        await modal.on_submit(interaction)
+        return view, interaction
+
+    view, interaction = asyncio.run(run())
+    (edit,) = interaction.edits
+    assert edit["embed"].title == "Game over: 440 spheres"
+    fields = {f.name: f.value for f in edit["embed"].fields}
+    # Cells typed into /oc have no click order, so they're listed in board order:
+    # C5, D4, D5, E4, then the popup's E3.
+    assert fields["Red"] == "Found on click 2"
+    assert fields["Solver picks followed"].endswith("of 1")
+    assert view.add_sphere.disabled
