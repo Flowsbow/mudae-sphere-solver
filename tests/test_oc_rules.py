@@ -89,3 +89,21 @@ def test_uniform_layout_prior_puts_one_seventh_of_red_on_the_outer_ring():
     p_outer = prior(RedModel.UNIFORM_LAYOUT)[outer[LAYOUT_RED]].sum()
     # (4 * 60 + 12 * 180) / 16_800 = 2400 / 16_800 = 1/7
     assert np.isclose(p_outer, 1 / 7)
+
+
+def test_there_are_eight_distinct_symmetries_and_they_fix_the_center():
+    from src.solver.modes.oc import SYMMETRIES
+
+    assert len(set(SYMMETRIES)) == 8
+    assert all(sorted(perm) == list(range(N_CELLS)) for perm in SYMMETRIES)
+    assert all(perm[CENTER] == CENTER for perm in SYMMETRIES)
+
+
+def test_legal_boards_and_prior_are_unchanged_by_every_symmetry():
+    from src.solver.modes.oc import SYMMETRIES
+
+    weight = {row.tobytes(): w for row, w in zip(LAYOUTS, prior(), strict=True)}
+    for perm in SYMMETRIES:
+        moved = LAYOUTS[:, list(perm)]
+        for row, w in zip(moved, prior(), strict=True):
+            assert weight[row.tobytes()] == pytest.approx(w)

@@ -15,8 +15,8 @@ N_GREEN = 4  # rules text; may touch red: D3 in the 2026-09-26 screenshot
 
 RED_CELLS = [i for i in range(N_CELLS) if i != CENTER]
 
-# Flow's stated base values, 2026-09-26. Real payouts include multipliers and are
-# not proportional to these, so callers can pass their own table.
+# Flow's stated base values, 2026-09-26. Multipliers apply to every color alike
+# (Flow, 2026-09-27), so they never change the best move.
 BASE_PAYOUT = {
     Color.BLUE: 10,
     Color.TEAL: 20,
@@ -77,6 +77,21 @@ def _enumerate_layouts() -> tuple[np.ndarray, np.ndarray]:
 LAYOUTS, LAYOUT_RED = _enumerate_layouts()
 LAYOUTS.flags.writeable = False
 LAYOUT_RED.flags.writeable = False
+
+
+def _symmetries() -> tuple[tuple[int, ...], ...]:
+    grid = np.arange(N_CELLS).reshape(SIZE, SIZE)
+    turns = [np.rot90(grid, k) for k in range(4)]
+    return tuple(
+        tuple(int(i) for i in g.flatten())
+        for g in turns + [np.fliplr(t) for t in turns]
+    )
+
+
+# The 4 rotations and 4 mirror images of the board. Every $oc rule (side-adjacent,
+# diagonal, same row or column, not the center) is unchanged by them, so a position
+# and its rotated or mirrored copy have the same value. Checked in test_oc_rules.py.
+SYMMETRIES = _symmetries()
 
 
 class RedModel(Enum):
