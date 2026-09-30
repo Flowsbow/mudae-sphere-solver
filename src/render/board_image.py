@@ -1,5 +1,5 @@
 import io
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping, Sequence
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
@@ -45,21 +45,83 @@ def click_values(
     }
 
 
+def _canvas() -> tuple[Image.Image, ImageDraw.ImageDraw, int]:
+    size = PAD * 2 + LABEL + SIZE * TILE + (SIZE - 1) * GAP
+    img = Image.new("RGB", (size * SCALE, size * SCALE), BACKGROUND)
+    draw = ImageDraw.Draw(img)
+    for i in range(SIZE):
+        middle = _px(PAD + LABEL + i * (TILE + GAP) + TILE // 2)
+        edge = _px(PAD + LABEL // 2)
+        draw.text((middle, edge), COL_NAMES[i], fill=DIM, font=_font(14), anchor="mm")
+        draw.text((edge, middle), ROW_NAMES[i], fill=DIM, font=_font(14), anchor="mm")
+    return img, draw, size
+
+
+def _png(img: Image.Image, size: int) -> bytes:
+    img = img.resize((size, size), Image.LANCZOS)
+    out = io.BytesIO()
+    img.save(out, format="PNG")
+    return out.getvalue()
+
+
+def _draw_revealed(
+    img: Image.Image,
+    draw: ImageDraw.ImageDraw,
+    cell: int,
+    color: Color,
+    letters: bool,
+    outlined: bool = False,
+) -> None:
+    x0, y0, x1, y1 = _tile_box(cell)
+    cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
+    outline = BEST_OUTLINE if outlined else None
+    if letters:
+        block = _mix(GEM[color], (0, 0, 0), BLOCK_DARKEN)
+        draw.rounded_rectangle(
+            [x0, y0, x1, y1], radius=_px(8), fill=block, outline=outline, width=_px(3)
+        )
+        draw.text(
+            (cx, cy),
+            LETTER[color],
+            fill=(255, 255, 255),
+            font=_font(30),
+            anchor="mm",
+            stroke_width=_px(1),
+            stroke_fill=(255, 255, 255),
+        )
+    else:
+        draw.rounded_rectangle(
+            [x0, y0, x1, y1],
+            radius=_px(8),
+            fill=TILE_COLOR,
+            outline=outline,
+            width=_px(3),
+        )
+        _gem(img, cx, cy, _px(20), GEM[color], seed=cell)
+
+
+def render_final(
+    cells: Sequence[Color | None], clicked: Collection[int], letters: bool = False
+) -> bytes:
+    img, draw, size = _canvas()
+    for cell in range(N_CELLS):
+        color = cells[cell]
+        if color is None:
+            draw.rounded_rectangle(
+                list(_tile_box(cell)), radius=_px(8), fill=TILE_COLOR
+            )
+        else:
+            _draw_revealed(img, draw, cell, color, letters, outlined=cell in clicked)
+    return _png(img, size)
+
+
 def render(
     state: BoardState,
     analysis: Analysis,
     payouts: Mapping[Color, float],
     letters: bool = False,
 ) -> bytes:
-    size = PAD * 2 + LABEL + SIZE * TILE + (SIZE - 1) * GAP
-    img = Image.new("RGB", (size * SCALE, size * SCALE), BACKGROUND)
-    draw = ImageDraw.Draw(img)
-
-    for i in range(SIZE):
-        middle = _px(PAD + LABEL + i * (TILE + GAP) + TILE // 2)
-        edge = _px(PAD + LABEL // 2)
-        draw.text((middle, edge), COL_NAMES[i], fill=DIM, font=_font(14), anchor="mm")
-        draw.text((edge, middle), ROW_NAMES[i], fill=DIM, font=_font(14), anchor="mm")
+    img, draw, size = _canvas()
 
     plus = click_values(analysis, payouts)
     totals = analysis.cell_value
@@ -70,21 +132,7 @@ def render(
         cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
         color = state.revealed[cell]
         if color is not None:
-            if letters:
-                block = _mix(GEM[color], (0, 0, 0), BLOCK_DARKEN)
-                draw.rounded_rectangle([x0, y0, x1, y1], radius=_px(8), fill=block)
-                draw.text(
-                    (cx, cy),
-                    LETTER[color],
-                    fill=(255, 255, 255),
-                    font=_font(30),
-                    anchor="mm",
-                    stroke_width=_px(1),
-                    stroke_fill=(255, 255, 255),
-                )
-            else:
-                draw.rounded_rectangle([x0, y0, x1, y1], radius=_px(8), fill=TILE_COLOR)
-                _gem(img, cx, cy, _px(20), GEM[color], seed=cell)
+            _draw_revealed(img, draw, cell, color, letters)
             continue
         heat = (
             (totals[cell] - low) / (high - low) if high > low and cell in totals else 0
@@ -101,10 +149,7 @@ def render(
         ink = BACKGROUND if heat > 0.55 else TEXT
         draw.text((cx, cy), f"+{plus[cell]:.0f}", fill=ink, font=_font(17), anchor="mm")
 
-    img = img.resize((size, size), Image.LANCZOS)
-    out = io.BytesIO()
-    img.save(out, format="PNG")
-    return out.getvalue()
+    return _png(img, size)
 
 
 def _px(v: float) -> int:

@@ -26,6 +26,7 @@ def _buttons_from_dump(name: str) -> list[ButtonInfo]:
             ButtonInfo(
                 emoji=fields["emoji"].split(":")[0],
                 disabled=fields["disabled"] == "True",
+                style=fields["style"],
             )
         )
     return buttons
@@ -67,3 +68,15 @@ def test_rejects_an_unknown_emoji():
     buttons = [ButtonInfo("spU", False)] * 24 + [ButtonInfo("spX", True)]
     with pytest.raises(NotAnOcBoardError):
         board_from_buttons(buttons)
+
+
+def test_finished_board_knows_which_five_cells_were_clicked():
+    from src.solver.board import cell_index
+
+    board = board_from_buttons(_buttons_from_dump("oc_finished.txt"))
+    assert board.clicked == {cell_index(c) for c in ("A1", "A2", "A3", "B1", "B2")}
+
+
+def test_midgame_board_has_no_blurple_cells():
+    board = board_from_buttons(_buttons_from_dump("oc_midgame.txt"))
+    assert board.clicked == frozenset()
