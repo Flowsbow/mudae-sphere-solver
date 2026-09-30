@@ -63,6 +63,12 @@ Tests check that all 16,800 legal boards and their probabilities are unchanged b
 each symmetry (a fake "symmetry" that shifts the board fails this), and that the
 solver returns identical values and moves with and without it.
 
+**Prefer a visual representation?**
+
+![A real board turned and mirrored four ways; every copy still follows the rules](docs/images/symmetry_rules.png)
+
+![A board with 4 clicks shown 8 ways; the solver's pick moves with the board every time](docs/images/symmetry_same_puzzle.png)
+
 ## Using the bot
 
 Type `/oc board: D4R B2T` in Discord: cells as row letter + column number, colors as
