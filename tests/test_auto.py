@@ -108,7 +108,8 @@ def test_full_game_reply_follows_every_mudae_edit(service):
     (reply,) = fresh.replies
     assert reply.first["embed"].title.startswith("Click ")
     assert reply.first["mention_author"] is False
-    assert reply.first["view"].children == []
+    (credit,) = reply.first["view"].children
+    assert credit.url == "https://github.com/Flowsbow/mudae-sphere-solver"
     mid, end = reply.edits
     assert "2 clicks" in mid["embed"].description
     assert mid["view"].state == BoardState.parse("A1R A2O A3G B1O B2Y")
@@ -119,6 +120,10 @@ def test_full_game_reply_follows_every_mudae_edit(service):
     assert len(fields["Your clicks"].splitlines()) == 5
     assert "344.7" in end["embed"].description
     assert end["attachments"][0].filename == "board.png"
+    assert (
+        end["view"].children[-1].url
+        == "https://github.com/Flowsbow/mudae-sphere-solver"
+    )
     assert tracker.games == {}
 
 

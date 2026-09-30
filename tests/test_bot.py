@@ -101,23 +101,26 @@ def _view(service, text, owner=1):
     return asyncio.run(make())
 
 
-def test_manual_view_has_only_the_add_a_sphere_button(service):
+def test_manual_view_has_add_a_sphere_then_the_credit_link(service):
     view = _view(service, "D4R", owner=99)
-    (add,) = view.children
+    add, credit = view.children
     assert add.label == "Add a sphere"
     assert not add.disabled
+    assert credit.url == "https://github.com/Flowsbow/mudae-sphere-solver"
 
 
-def test_auto_view_has_no_buttons(service):
+def test_auto_view_has_only_the_credit_link(service):
     async def make():
         return BoardView(service, BoardState.parse("D4R"), 99, manual=False)
 
-    assert asyncio.run(make()).children == []
+    (credit,) = asyncio.run(make()).children
+    assert credit.url == "https://github.com/Flowsbow/mudae-sphere-solver"
 
 
 def test_button_is_disabled_once_all_clicks_are_used(service):
     view = _view(service, "D4R D5O E4O C5Y E3Y")
     assert view.add_sphere.disabled
+    assert view.children[-1].url == "https://github.com/Flowsbow/mudae-sphere-solver"
 
 
 class _FakeResponse:
@@ -310,3 +313,4 @@ def test_fifth_sphere_in_the_popup_shows_the_stats_screen(service):
     assert fields["Red"] == "Found on click 2"
     assert fields["Solver picks followed"].endswith("of 1")
     assert view.add_sphere.disabled
+    assert view.children[-1].url == "https://github.com/Flowsbow/mudae-sphere-solver"

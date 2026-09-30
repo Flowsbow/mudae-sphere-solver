@@ -16,6 +16,7 @@ IMAGE_NAME = "board.png"
 EMBED_COLOR = 0xFACC15
 # Chosen 2026-09-29: comfortably longer than a $oc game's 2-minute window.
 BUTTON_TIMEOUT_SECONDS = 600
+CREDIT_URL = "https://github.com/Flowsbow/mudae-sphere-solver"
 
 
 class OcService:
@@ -154,6 +155,9 @@ class BoardView(discord.ui.View):
         self.final: tuple[tuple[Color | None, ...], frozenset[int]] | None = None
         if not manual:
             self.remove_item(self.add_sphere)
+        self.add_item(
+            discord.ui.Button(label="Flowsbow/mudae-sphere-solver", url=CREDIT_URL)
+        )
         self.refresh()
 
     def advance(self, state: BoardState, analysis: Analysis | None = None) -> None:
@@ -203,7 +207,7 @@ class BoardView(discord.ui.View):
 
     async def on_timeout(self) -> None:
         self.add_sphere.disabled = True
-        if self.message is not None and self.children:
+        if self.message is not None and self.add_sphere in self.children:
             try:
                 await self.message.edit(view=self)
             except discord.HTTPException:
