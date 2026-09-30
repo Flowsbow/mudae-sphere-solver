@@ -72,6 +72,12 @@ solver returns identical values and moves with and without it.
 Then type `/oc board: D4R B2T` in Discord: cells as row letter + column number, colors
 as R O Y G T B. Leave `board` empty for a new game.
 
+**Auto mode:** run `/oc auto: on`, then play `$oc` as usual. The bot reads Mudae's
+board buttons directly (no image recognition), replies with the best click, and
+updates its reply every time you click. This needs **Message Content Intent**
+enabled on the bot's page in the Discord developer portal. You can also right-click
+any Mudae board → Apps → **Solve sphere board**.
+
 ## Development
 
 ```

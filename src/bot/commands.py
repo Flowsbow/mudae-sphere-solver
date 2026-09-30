@@ -1,9 +1,11 @@
 import asyncio
 import io
+from typing import Literal
 
 import discord
 from discord import app_commands
 
+from src.bot.mudae_reader import NotAnOcBoardError, read_oc_board
 from src.render.board_image import render
 from src.solver.board import BoardInputError, BoardState, cell_name
 from src.solver.ev import Analysis, InconsistentBoardError, Solver
@@ -20,6 +22,7 @@ class OcService:
         self.solver = Solver(LAYOUTS, prior(), BASE_PAYOUT, CLICKS, SYMMETRIES)
         self.lock = asyncio.Lock()
         self.letters_for: dict[int, bool] = {}
+        self.auto_users: set[int] = set()
 
     async def analyze(self, state: BoardState) -> Analysis:
         async with self.lock:
@@ -157,12 +160,51 @@ class AddSphereModal(discord.ui.Modal, title="Add a sphere"):
         )
 
 
+async def send_board(
+    interaction: discord.Interaction, service: OcService, state: BoardState
+) -> None:
+    await interaction.response.defer(thinking=True)
+    letters = service.letters_for.get(interaction.user.id, False)
+    try:
+        embed, file = await solve_and_draw(service, state, letters)
+    except InconsistentBoardError as err:
+        await interaction.followup.send(f"That board can't happen in $oc: {err}")
+        return
+    view = BoardView(service, state, interaction.user.id)
+    view.message = await interaction.followup.send(
+        embed=embed, file=file, view=view, wait=True
+    )
+
+
+async def set_auto(
+    interaction: discord.Interaction, service: OcService, on: bool
+) -> None:
+    if on:
+        service.auto_users.add(interaction.user.id)
+        text = (
+            "Auto mode on. Type `$oc` and I'll solve Mudae's board as you play. "
+            "Turn it off with `/oc auto: off`."
+        )
+    else:
+        service.auto_users.discard(interaction.user.id)
+        text = "Auto mode off."
+    await interaction.response.send_message(text, ephemeral=True)
+
+
 def register(tree: app_commands.CommandTree, service: OcService) -> None:
     @tree.command(name="oc", description="Best next click for a $oc board")
     @app_commands.describe(
-        board="Revealed cells, e.g. D4R B2T (R O Y G T B). Leave empty for a new game."
+        board="Revealed cells, e.g. D4R B2T (R O Y G T B). Leave empty for a new game.",
+        auto="Solve your Mudae $oc games automatically.",
     )
-    async def oc(interaction: discord.Interaction, board: str = "") -> None:
+    async def oc(
+        interaction: discord.Interaction,
+        board: str = "",
+        auto: Literal["on", "off"] | None = None,
+    ) -> None:
+        if auto is not None:
+            await set_auto(interaction, service, auto == "on")
+            return
         try:
             state = BoardState.parse(board)
         except BoardInputError as err:
@@ -170,15 +212,22 @@ def register(tree: app_commands.CommandTree, service: OcService) -> None:
                 f"Couldn't read that board: {err}", ephemeral=True
             )
             return
+        await send_board(interaction, service, state)
 
-        await interaction.response.defer(thinking=True)
-        letters = service.letters_for.get(interaction.user.id, False)
+    @tree.context_menu(name="Solve sphere board")
+    async def solve_board(
+        interaction: discord.Interaction, message: discord.Message
+    ) -> None:
         try:
-            embed, file = await solve_and_draw(service, state, letters)
-        except InconsistentBoardError as err:
-            await interaction.followup.send(f"That board can't happen in $oc: {err}")
+            board = read_oc_board(message)
+        except NotAnOcBoardError as err:
+            await interaction.response.send_message(
+                f"That doesn't look like a $oc board: {err}", ephemeral=True
+            )
             return
-        view = BoardView(service, state, interaction.user.id)
-        view.message = await interaction.followup.send(
-            embed=embed, file=file, view=view, wait=True
-        )
+        if board.finished:
+            await interaction.response.send_message(
+                "That game is already over.", ephemeral=True
+            )
+            return
+        await send_board(interaction, service, board.state)

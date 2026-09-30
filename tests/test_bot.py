@@ -30,14 +30,17 @@ def _analyze(service, text):
     return state, asyncio.run(service.analyze(state))
 
 
-def test_register_adds_the_oc_command_with_an_optional_board_option(service):
+def test_register_adds_the_oc_command_with_optional_board_and_auto(service):
     tree = app_commands.CommandTree(discord.Client(intents=discord.Intents.default()))
     register(tree, service)
     command = tree.get_command("oc")
     assert command is not None
-    (board,) = command.parameters
+    board, auto = command.parameters
     assert board.name == "board"
     assert not board.required
+    assert auto.name == "auto"
+    assert not auto.required
+    assert [c.value for c in auto.choices] == ["on", "off"]
 
 
 def test_reply_names_the_best_cell_and_attaches_the_image(service):
@@ -196,3 +199,87 @@ def test_colorblind_button_redraws_the_same_message_and_is_remembered(service):
     assert service.letters_for[7] is True
     assert _view(service, "A1B", owner=7).letters
     service.letters_for.pop(7)
+
+
+def test_solve_sphere_board_is_a_message_command(service):
+    from discord.enums import AppCommandType
+
+    tree = app_commands.CommandTree(discord.Client(intents=discord.Intents.default()))
+    register(tree, service)
+    assert tree.get_command("Solve sphere board", type=AppCommandType.message)
+
+
+class _FakeFollowup:
+    def __init__(self):
+        self.sent = []
+
+    async def send(self, content=None, **kwargs):
+        self.sent.append((content, kwargs))
+        return object()
+
+
+class _FakeCommandResponse(_FakeResponse):
+    async def defer(self, thinking=False):
+        self.thinking = thinking
+
+
+class _FakeCommandInteraction(_FakeInteraction):
+    def __init__(self, user_id):
+        super().__init__(user_id)
+        self.response = _FakeCommandResponse()
+        self.followup = _FakeFollowup()
+
+
+def _mudae_message(dump_name, author_id=None):
+    from test_mudae_reader import _buttons_from_dump
+
+    from src.bot.mudae_reader import MUDAE_ID
+
+    buttons = _buttons_from_dump(dump_name)
+    rows = []
+    for r in range(5):
+        children = [
+            type(
+                "Btn",
+                (),
+                {
+                    "emoji": discord.PartialEmoji(name=b.emoji),
+                    "disabled": b.disabled,
+                },
+            )()
+            for b in buttons[r * 5 : r * 5 + 5]
+        ]
+        rows.append(type("Row", (), {"children": children})())
+    author = type("Author", (), {"id": author_id or MUDAE_ID})()
+    return type("Msg", (), {"author": author, "components": rows})()
+
+
+def _right_click_solve(service, message):
+    from discord.enums import AppCommandType
+
+    tree = app_commands.CommandTree(discord.Client(intents=discord.Intents.default()))
+    register(tree, service)
+    command = tree.get_command("Solve sphere board", type=AppCommandType.message)
+    interaction = _FakeCommandInteraction(5)
+    asyncio.run(command.callback(interaction, message))
+    return interaction
+
+
+def test_right_click_on_a_live_mudae_board_replies_with_the_solution(service):
+    interaction = _right_click_solve(service, _mudae_message("oc_midgame.txt"))
+    ((_, kwargs),) = interaction.followup.sent
+    assert kwargs["embed"].title.startswith("Click ")
+    assert "2 clicks" in kwargs["embed"].description
+    assert kwargs["view"].state == BoardState.parse("A1R A3G B2Y")
+
+
+def test_right_click_on_a_finished_game_says_it_is_over(service):
+    interaction = _right_click_solve(service, _mudae_message("oc_finished.txt"))
+    assert interaction.followup.sent == []
+    assert "already over" in interaction.response.sent[0][0]
+
+
+def test_right_click_on_someone_elses_message_is_refused(service):
+    interaction = _right_click_solve(service, _mudae_message("oc_fresh.txt", 1))
+    assert interaction.followup.sent == []
+    assert "isn't from Mudae" in interaction.response.sent[0][0]

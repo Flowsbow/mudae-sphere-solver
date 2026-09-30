@@ -5,19 +5,25 @@ import discord
 from discord import app_commands
 from dotenv import load_dotenv
 
+from src.bot.auto import AutoTracker
 from src.bot.commands import OcService, register
+from src.bot.inspector import register_inspector
 
 
 class SolverBot(discord.Client):
     def __init__(self, guild_id: int | None) -> None:
-        super().__init__(intents=discord.Intents.default())
+        intents = discord.Intents.default()
+        intents.message_content = True
+        super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
         self.service = OcService()
+        self.auto = AutoTracker(self.service)
         self.guild_id = guild_id
         self.warm_up_task: asyncio.Task | None = None
 
     async def setup_hook(self) -> None:
         register(self.tree, self.service)
+        register_inspector(self.tree)
         if self.guild_id is not None:
             guild = discord.Object(id=self.guild_id)
             self.tree.copy_global_to(guild=guild)
@@ -25,6 +31,14 @@ class SolverBot(discord.Client):
         else:
             await self.tree.sync()
         self.warm_up_task = asyncio.create_task(self.service.warm_up())
+
+    async def on_message(self, message: discord.Message) -> None:
+        await self.auto.on_message(message)
+
+    async def on_message_edit(
+        self, before: discord.Message, after: discord.Message
+    ) -> None:
+        await self.auto.on_message_edit(after)
 
 
 def main() -> None:
