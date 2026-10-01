@@ -5,6 +5,8 @@ expected-value numbers behind each recommendation.
 
 **[Invite the bot to your server](https://discord.com/oauth2/authorize?client_id=1554720194046197840&permissions=117760&integration_type=0&scope=bot)**
 
+**[Add it to your account](https://discord.com/oauth2/authorize?client_id=1554720194046197840&integration_type=1&scope=applications.commands)** to use `/oc` and **Solve sphere board** in any server or DM, even ones the bot isn't in.
+
 ## Status
 
 Phase 1: `$oc` solver with the board typed in through a `/oc` slash command. The

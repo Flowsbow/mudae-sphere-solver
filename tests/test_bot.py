@@ -314,3 +314,24 @@ def test_fifth_sphere_in_the_popup_shows_the_stats_screen(service):
     assert fields["Solver picks followed"].endswith("of 1")
     assert view.add_sphere.disabled
     assert view.children[-1].url == "https://github.com/Flowsbow/mudae-sphere-solver"
+
+
+@pytest.mark.parametrize(
+    ("name", "kind"),
+    [
+        ("oc", "chat_input"),
+        ("colorblindmode", "chat_input"),
+        ("Solve sphere board", "message"),
+    ],
+)
+def test_commands_can_be_installed_to_a_user_account(service, name, kind):
+    from discord.enums import AppCommandType
+
+    tree = app_commands.CommandTree(discord.Client(intents=discord.Intents.default()))
+    register(tree, service)
+    command = tree.get_command(name, type=AppCommandType[kind])
+    payload = command.to_dict(tree)
+    # Discord's codes: install 0 = server, 1 = user; context 0 = server, 1 = bot DM,
+    # 2 = group DM or other DMs.
+    assert sorted(payload["integration_types"]) == [0, 1]
+    assert sorted(payload["contexts"]) == [0, 1, 2]

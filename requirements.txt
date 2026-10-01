@@ -1,4 +1,4 @@
-discord.py>=2.3,<3
+discord.py>=2.4,<3
 numpy>=1.26
 pillow>=10.1
 pytest>=8

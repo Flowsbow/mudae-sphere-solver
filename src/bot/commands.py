@@ -292,6 +292,8 @@ def toggle_colorblind(service: OcService, user_id: int) -> str:
 
 def register(tree: app_commands.CommandTree, service: OcService) -> None:
     @tree.command(name="oc", description="Best next click for a $oc board")
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.describe(
         board="Revealed cells, e.g. D4R B2T (R O Y G T B). Skip for a new game.",
         auto="Solve your Mudae $oc games automatically.",
@@ -318,11 +320,15 @@ def register(tree: app_commands.CommandTree, service: OcService) -> None:
         name="colorblindmode",
         description="Toggle lettered blocks instead of colored spheres",
     )
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def colorblindmode(interaction: discord.Interaction) -> None:
         text = toggle_colorblind(service, interaction.user.id)
         await interaction.response.send_message(text, ephemeral=True)
 
     @tree.context_menu(name="Solve sphere board")
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def solve_board(
         interaction: discord.Interaction, message: discord.Message
     ) -> None:
