@@ -34,9 +34,10 @@ Apps → **Solve sphere board**.
 **Colorblind mode:** `/colorblindmode` toggles lettered color blocks (B T G Y O R)
 instead of spheres, for your boards from then on.
 
-**Sphere bonus:** `/spherebonus flat: 6 percent: 25` sets the bonuses from your `$kt`
-so the numbers match what Mudae pays you. It's saved per server, because the same
-player can have different bonuses on different servers. Each sphere pays
+**Sphere bonus:** Mudae server and user premium add a bonus to every sphere.
+`/spherebonus flat: 6 percent: 25` tells the bot yours, so its numbers match what Mudae
+pays you. The flat part is the +N on the "Additional spheres" line of `$kt`. It's saved
+per server, because server premium differs from server to server. Each sphere pays
 (base + flat) × (1 + percent/100), rounded half up. That matched 10 observed `$oq` and
 `$oh` payouts; it hasn't been checked in a `$oc` game yet.
 

@@ -413,7 +413,7 @@ def register(tree: app_commands.CommandTree, service: OcService) -> None:
 
     @tree.command(
         name="spherebonus",
-        description="Set your $kt sphere bonuses so the numbers match your payouts",
+        description="Set your premium sphere bonus so the numbers match your payouts",
     )
     @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
