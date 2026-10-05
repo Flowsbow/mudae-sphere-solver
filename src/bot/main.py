@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from src.bot.auto import AutoTracker
 from src.bot.commands import OcService, register
 from src.bot.inspector import register_inspector
+from src.bot.oq import OqService, register_oq
 
 
 class SolverBot(discord.Client):
@@ -18,12 +19,14 @@ class SolverBot(discord.Client):
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
         self.service = OcService(settings_path)
+        self.oq = OqService(self.service)
         self.auto = AutoTracker(self.service)
         self.guild_id = guild_id
         self.warm_up_task: asyncio.Task | None = None
 
     async def setup_hook(self) -> None:
         register(self.tree, self.service)
+        register_oq(self.tree, self.oq)
         register_inspector(self.tree)
         if self.guild_id is not None:
             guild = discord.Object(id=self.guild_id)

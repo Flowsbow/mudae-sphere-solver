@@ -96,3 +96,12 @@ def test_symmetry_does_not_change_the_answer():
 def test_an_impossible_board_is_refused(solver):
     with pytest.raises(InconsistentBoardError):
         solver.analyze(board(A1=4))  # a corner has only 3 neighbors
+
+
+def test_equal_totals_go_to_the_bigger_payout_first(solver):
+    # Every purple known, 6 paid clicks left: any order of the best 6 clicks gives
+    # the same total, so the red (195) should be suggested before a green.
+    codes = board(A2=PURPLE, B2=PURPLE, C2=PURPLE, D4=RED_SHOWN, E1=0)
+    result = solver.analyze(codes)
+    assert result.value == pytest.approx(195 + 3 * 70 + 2 * 51)
+    assert result.best == cell_index("D4")

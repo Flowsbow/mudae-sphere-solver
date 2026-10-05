@@ -32,6 +32,7 @@ class OqAnalysis:
     value: float | None  # expected spheres from here; only when exact
     cell_value: dict[int, float]  # only when exact
     purple_prob: dict[int, float]
+    cell_payout: dict[int, float]  # average spheres from clicking that cell now
 
 
 def clicks_used(codes: tuple[int, ...]) -> int:
@@ -70,17 +71,23 @@ class OqSolver:
         hidden = [c for c in range(N_CELLS) if codes[c] == HIDDEN]
         mass = self.is_purple[idx].mean(axis=0)
         purple_prob = {c: float(mass[c]) for c in hidden}
+        now = self.pay[self.layouts[idx]].mean(axis=0)
+        payout = {c: float(now[c]) for c in hidden}
+        payout |= {
+            c: float(self.pay[RED]) for c, x in enumerate(codes) if x == RED_SHOWN
+        }
         if clicks_left == 0:
-            return OqAnalysis(0, None, True, 0.0, {}, purple_prob)
+            return OqAnalysis(0, None, True, 0.0, {}, purple_prob, payout)
         if clicks_left > EXACT_CLICKS and len(idx) > 1:
             best = self.early_pick(codes, idx)
-            return OqAnalysis(clicks_left, best, False, None, {}, purple_prob)
+            return OqAnalysis(clicks_left, best, False, None, {}, purple_prob, payout)
         if len(self._memo) > MEMO_LIMIT:
             self._memo.clear()
         values = self._cell_values(codes, idx)
         top = max(values.values())
-        best = min(c for c, v in values.items() if v >= top - TIE_TOLERANCE)
-        return OqAnalysis(clicks_left, best, True, top, values, purple_prob)
+        tied = [c for c, v in values.items() if v >= top - TIE_TOLERANCE]
+        best = max(tied, key=lambda c: (payout[c], -c))
+        return OqAnalysis(clicks_left, best, True, top, values, purple_prob, payout)
 
     def early_pick(self, codes: tuple[int, ...], idx: np.ndarray) -> int:
         """The cell most likely to be purple; ties go to the higher expected payout.

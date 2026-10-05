@@ -1,25 +1,23 @@
 # mudae-sphere-solver
 
-A Discord bot that recommends moves in Mudae's `$oc` sphere minigame and shows the
-expected-value numbers behind each recommendation. The repository also has an exact
-solver for `$oq`, which is not in the bot.
+A Discord bot that recommends moves in Mudae's `$oc` and `$oq` sphere minigames and
+shows the expected-value numbers behind each recommendation.
 
 **[Invite the bot to your server](https://discord.com/oauth2/authorize?client_id=1554720194046197840&permissions=117760&integration_type=0&scope=bot)**
 
-**[Add it to your account](https://discord.com/oauth2/authorize?client_id=1554720194046197840&integration_type=1&scope=applications.commands)** to use `/oc`, `/spherebonus`, `/colorblindmode` and **Solve sphere board** in any server or DM, even ones the bot isn't in. Auto mode still needs the bot in the server, because it has to read Mudae's messages.
+**[Add it to your account](https://discord.com/oauth2/authorize?client_id=1554720194046197840&integration_type=1&scope=applications.commands)** to use `/oc`, `/oq`, `/spherebonus`, `/colorblindmode` and **Solve sphere board** in any server or DM, even ones the bot isn't in. Auto mode still needs the bot in the server, because it has to read Mudae's messages.
 
 **Contents:** [Status](#status) · [Using the bot](#using-the-bot) · [`$oc`](#oc) ·
-[`$oq` solver](#oq-solver) · [Running your own copy](#running-your-own-copy) ·
+[`$oq`](#oq) · [Running your own copy](#running-your-own-copy) ·
 [Development](#development) · [License](#license)
 
 ## Status
 
 Feature-complete. The bot solves `$oc` three ways: type the board into `/oc`,
 right-click a Mudae board, or turn on auto mode and it follows your game as you
-click. The solver's expected values are verified by simulation.
-
-`$oq` has a solver and its own simulation check (`src/solver/oq_ev.py`,
-`sim/verify_oq.py`) but no bot command. `$oh` and `$ot` are not planned.
+click. `$oq` is solved through `/oq`, with the board typed in; there is no auto mode
+or right-click for `$oq`. Both solvers' expected values are verified by simulation.
+`$oh` and `$ot` are not planned.
 
 ## Using the bot
 
@@ -30,6 +28,12 @@ R O Y G T B. For a new game, send just `/oc` without adding `board`.
 board buttons directly (no image recognition), replies with the best click, and
 updates its reply every time you click. You can also right-click any Mudae board →
 Apps → **Solve sphere board**.
+
+**`$oq`:** type `/oq board: C3B B4G A1T`. Colors are B T G Y O for 0 to 4 purples
+around a tile, P for a purple, and R for the red once it appears. Send just `/oq` for a
+new game. **Add a sphere** updates the board as you play; after you click the red,
+add it again (like `D4 R`) so the bot counts that click. Hidden tiles show their chance
+of being purple, and once every purple is known they show what each tile pays.
 
 **Colorblind mode:** `/colorblindmode` toggles lettered color blocks (B T G Y O R)
 instead of spheres, for your boards from then on.
@@ -179,9 +183,9 @@ solver returns identical values and moves with and without it.
 
 ![A board with 4 clicks shown 8 ways; the solver's pick moves with the board every time](docs/images/symmetry_same_puzzle.png)
 
-## `$oq` solver
+## `$oq`
 
-Not in the bot. The solver is `src/solver/oq_ev.py`; its rules are in
+Solved by `/oq`. The solver is `src/solver/oq_ev.py`; its rules and payouts are in
 `src/solver/modes/oq.py`.
 
 ### Rules as modeled
@@ -197,6 +201,10 @@ game:
 
 There are 12,650 ways to place 4 purples on 25 tiles. The solver assumes each is
 equally likely. Like the `$oc` model, this hasn't been checked against game data.
+
+Base payouts: purple 5, blue 10, teal 20, green 35 (seen in a game with no bonus) and
+red 150 (seen as 195 with a +6 / 25% bonus, which only base 150 gives). Yellow (55)
+and orange (90) haven't been seen in `$oq` yet, so they're assumed equal to `$oc`'s.
 
 ![A real finished $oq game, and the solver's purple odds three clicks in](docs/images/oq_board.png)
 
@@ -238,7 +246,8 @@ game could go. Its cost grows 14 to 18 times with each extra paid click left:
 click isn't practical, so the solver searches exactly only for the last 3 paid clicks,
 or as soon as only one placement fits. Before that it clicks the tile most likely to
 be purple; ties go to the higher expected payout, then the first tile in reading
-order.
+order. When several clicks lead to the same expected total, as happens once every
+purple is known, it suggests the one that pays the most right away.
 
 ### Choosing the early-game rule
 
@@ -266,7 +275,7 @@ It uses test payouts that give every color a different value.
 
 | Position | Exact | Simulated | Difference |
 | --- | --- | --- | --- |
-| 2 paid clicks left | 183.175 | 182.356 ± 1.209 | −0.68 SE |
+| 2 paid clicks left | 183.175 | 182.405 ± 1.207 | −0.64 SE |
 | 2 left, 2 purples found | 247.875 | 247.269 ± 0.691 | −0.88 SE |
 | 3 left, 1 purple found | 308.738 | 307.880 ± 0.640 | −1.34 SE |
 

@@ -12,6 +12,8 @@ from src.solver.board import (
     Color,
 )
 from src.solver.ev import Analysis
+from src.solver.modes.oq import PURPLE, RED, RED_SHOWN
+from src.solver.oq_ev import OqAnalysis
 
 # Look chosen by Flow from rendered mockups, 2026-09-28 ("design B").
 SCALE = 2
@@ -34,6 +36,8 @@ LETTER = {color: color.name[0] for color in Color}
 # Darkened so white letters stay readable on yellow and teal blocks.
 BLOCK_DARKEN = 0.25
 GOLD_MID, GOLD_DARK = (222, 172, 58), (140, 96, 28)
+# $oq's purple sphere; display color chosen 2026-10-05.
+PURPLE_GEM = (150, 85, 200)
 
 
 def click_values(
@@ -149,6 +153,76 @@ def render(
         ink = BACKGROUND if heat > 0.55 else TEXT
         draw.text((cx, cy), f"+{plus[cell]:.0f}", fill=ink, font=_font(17), anchor="mm")
 
+    return _png(img, size)
+
+
+def percent(p: float) -> str:
+    return f"{p:.1%}".replace(".0%", "%")
+
+
+def _block(draw, cell: int, color, text: str, outlined: bool = False) -> None:
+    x0, y0, x1, y1 = _tile_box(cell)
+    draw.rounded_rectangle(
+        [x0, y0, x1, y1],
+        radius=_px(8),
+        fill=_mix(color, (0, 0, 0), BLOCK_DARKEN),
+        outline=BEST_OUTLINE if outlined else None,
+        width=_px(3),
+    )
+    draw.text(
+        ((x0 + x1) // 2, (y0 + y1) // 2),
+        text,
+        fill=(255, 255, 255),
+        font=_font(28),
+        anchor="mm",
+        stroke_width=_px(1),
+        stroke_fill=(255, 255, 255),
+    )
+
+
+def purples_all_known(analysis: OqAnalysis) -> bool:
+    return not any(analysis.purple_prob.values())
+
+
+def render_oq(codes: Sequence[int], analysis: OqAnalysis) -> bytes:
+    """$oq board: counts as numbered blocks; hidden tiles show their purple odds,
+    or their payout once every purple is known."""
+    img, draw, size = _canvas()
+    known = purples_all_known(analysis)
+    top = max(analysis.purple_prob.values(), default=0.0)
+    most = max((analysis.cell_payout[c] for c in analysis.purple_prob), default=0.0)
+    for cell, code in enumerate(codes):
+        best = cell == analysis.best
+        if 0 <= code <= 4:
+            _block(draw, cell, GEM[Color(code)], str(code))
+        elif code == PURPLE:
+            _block(draw, cell, PURPLE_GEM, "P")
+        elif code in (RED, RED_SHOWN):
+            _block(draw, cell, GEM[Color.RED], "R", outlined=best)
+        else:
+            x0, y0, x1, y1 = _tile_box(cell)
+            if known:
+                pay = analysis.cell_payout[cell]
+                fill = _mix(TILE_COLOR, HEAT, 0.85 * pay / most if most else 0.0)
+                text, ink = f"+{pay:.0f}", BACKGROUND if pay > 0.65 * most else TEXT
+            else:
+                p = analysis.purple_prob[cell]
+                fill = _mix(TILE_COLOR, PURPLE_GEM, 0.85 * p / top if top else 0.0)
+                text, ink = percent(p), TEXT
+            draw.rounded_rectangle(
+                [x0, y0, x1, y1],
+                radius=_px(8),
+                fill=fill,
+                outline=BEST_OUTLINE if best else None,
+                width=_px(3),
+            )
+            draw.text(
+                ((x0 + x1) // 2, (y0 + y1) // 2),
+                text,
+                fill=ink,
+                font=_font(17),
+                anchor="mm",
+            )
     return _png(img, size)
 
 
