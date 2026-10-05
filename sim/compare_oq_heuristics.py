@@ -27,9 +27,10 @@ from sim.verify_oq import purple_count
 from src.solver.modes.oq import CLICKS, LAYOUTS, PURPLE, RED, RED_SHOWN
 from src.solver.oq_ev import HIDDEN, OqSolver
 
-# Purple, blue, teal, green and red are the values in Flow's 2026-09-30 game log
-# (they include Flow's multiplier). Yellow and orange did not appear there; the
-# 70 and 90 are placeholders for this comparison only.
+# Purple, blue, teal, green and red are the values in Flow's 2026-09-30 game log.
+# They match base values with Flow's +6 / 25% sphere bonus (src/solver/payouts.py,
+# checked 2026-10-03). Yellow and orange did not appear there; the 70 and 90 are
+# placeholders for this comparison only.
 PAY = {0: 20, 1: 33, 2: 51, 3: 70, 4: 90, PURPLE: 14, RED: 195}
 ENDGAME = 3  # exact for the last 3 paid clicks, as in the bot
 SEED = 7
