@@ -53,7 +53,7 @@ def register_inspector(tree: app_commands.CommandTree) -> None:
         dump = describe_message(message)
         file = discord.File(io.BytesIO(dump.encode()), filename=DUMP_NAME)
         await interaction.response.send_message(
-            "Here's what that message's buttons contain. Send this file to Claude.",
+            "Here's what that message's buttons contain.",
             file=file,
             ephemeral=True,
         )

@@ -9,9 +9,12 @@ expected-value numbers behind each recommendation.
 
 ## Status
 
-Phase 1: `$oc` solver with the board typed in through a `/oc` slash command. The
-solver's expected values are verified by simulation. The bot replies with a rendered
-board showing the best click.
+Feature-complete. The bot solves `$oc` three ways: type the board into `/oc`,
+right-click a Mudae board, or turn on auto mode and it follows your game as you
+click. The solver's expected values are verified by simulation.
+
+`$oq` has a solver and its own simulation check (`src/solver/oq_ev.py`,
+`sim/verify_oq.py`) but no bot command. `$oh` and `$ot` are not planned.
 
 ## `$oc` rules as modeled
 
@@ -44,8 +47,13 @@ and compares the average score with the solver's prediction.
 | Simulated average, 20,000 games (seed 0) | 344.85 ± 0.41 |
 | Difference | +0.29 standard errors: pass (limit 3) |
 
+With a +6, 25% sphere bonus (`python sim/verify_oc.py --flat 6 --percent 25`), the
+solver predicts 468.40 and 20,000 simulated games average 468.54 ± 0.51 (+0.28 standard
+errors: pass).
+
 The check was confirmed to fail when a bug was planted in the solver (off by 82
-standard errors) and when the solver was given the wrong red-position model (off by 22).
+standard errors) and when the solver was given the wrong red-position model (off by 43,
+same 20,000 games).
 
 ## Board symmetry
 
@@ -83,6 +91,12 @@ Apps → **Solve sphere board**.
 
 **Colorblind mode:** `/colorblindmode` toggles lettered color blocks (B T G Y O R)
 instead of spheres, for your boards from then on.
+
+**Sphere bonus:** `/spherebonus flat: 6 percent: 25` sets the bonuses from your `$kt`
+so the numbers match what Mudae pays you. It's saved per server, because the same
+player can have different bonuses on different servers. Each sphere pays
+(base + flat) × (1 + percent/100), rounded half up. That matched 10 observed `$oq` and
+`$oh` payouts; it hasn't been checked in a `$oc` game yet.
 
 ## Running your own copy
 

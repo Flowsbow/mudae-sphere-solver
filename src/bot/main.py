@@ -1,5 +1,6 @@
 import asyncio
 import os
+from pathlib import Path
 
 import discord
 from discord import app_commands
@@ -11,12 +12,12 @@ from src.bot.inspector import register_inspector
 
 
 class SolverBot(discord.Client):
-    def __init__(self, guild_id: int | None) -> None:
+    def __init__(self, guild_id: int | None, settings_path: Path) -> None:
         intents = discord.Intents.default()
         intents.message_content = True
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
-        self.service = OcService()
+        self.service = OcService(settings_path)
         self.auto = AutoTracker(self.service)
         self.guild_id = guild_id
         self.warm_up_task: asyncio.Task | None = None
@@ -47,7 +48,8 @@ def main() -> None:
     if not token:
         raise SystemExit("DISCORD_TOKEN is missing. Put it in the .env file.")
     guild_id = os.environ.get("DISCORD_GUILD_ID")
-    SolverBot(int(guild_id) if guild_id else None).run(token)
+    settings_path = Path(os.environ.get("SETTINGS_FILE", "settings.json"))
+    SolverBot(int(guild_id) if guild_id else None, settings_path).run(token)
 
 
 if __name__ == "__main__":

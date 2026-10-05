@@ -16,6 +16,7 @@ from src.solver.modes.oc import (  # noqa: E402
     SYMMETRIES,
     prior,
 )
+from src.solver.payouts import with_bonus  # noqa: E402
 
 SIZE = 5
 CENTER = (2, 2)
@@ -49,7 +50,7 @@ def random_board(rng: np.random.Generator) -> list[Color]:
     return [board[cell] for cell in cells]
 
 
-def play(solver: Solver, board: list[Color], best_cache: dict) -> float:
+def play(solver: Solver, board: list[Color], best_cache: dict, payouts: dict) -> float:
     state = BoardState()
     total = 0.0
     for _ in range(CLICKS):
@@ -57,7 +58,7 @@ def play(solver: Solver, board: list[Color], best_cache: dict) -> float:
             best_cache[state] = solver.analyze(state).best
         cell = best_cache[state]
         state = state.reveal(cell, board[cell])
-        total += BASE_PAYOUT[board[cell]]
+        total += payouts[board[cell]]
     return total
 
 
@@ -65,9 +66,12 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--games", type=int, default=20_000)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--flat", type=int, default=0, help="sphere bonus, +N")
+    parser.add_argument("--percent", type=int, default=0, help="sphere bonus, %%")
     args = parser.parse_args()
 
-    solver = Solver(LAYOUTS, prior(), BASE_PAYOUT, CLICKS, SYMMETRIES)
+    payouts = with_bonus(BASE_PAYOUT, args.flat, args.percent)
+    solver = Solver(LAYOUTS, prior(), payouts, CLICKS, SYMMETRIES)
     start = time.time()
     predicted = solver.analyze(BoardState()).value
     print(f"ev.py prediction: {predicted:.3f}  ({time.time() - start:.0f} s)")
@@ -75,7 +79,10 @@ def main() -> int:
     rng = np.random.default_rng(args.seed)
     best_cache: dict = {}
     scores = np.array(
-        [play(solver, random_board(rng), best_cache) for _ in range(args.games)]
+        [
+            play(solver, random_board(rng), best_cache, payouts)
+            for _ in range(args.games)
+        ]
     )
     mean = scores.mean()
     se = scores.std(ddof=1) / np.sqrt(args.games)

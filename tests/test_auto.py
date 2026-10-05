@@ -41,6 +41,7 @@ class _Message:
         self.author = _Author(author_id)
         self.content = content
         self.channel = CHANNEL
+        self.guild = None
         self.components = list(components)
         self.interaction_metadata = None
         self.replies = []

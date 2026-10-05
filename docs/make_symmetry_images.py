@@ -15,8 +15,10 @@ from src.solver.modes.oc import BASE_PAYOUT, CLICKS, LAYOUTS, SYMMETRIES, prior
 
 OUT = Path(__file__).parent / "images"
 LETTER = {color: letter for letter, color in COLOR_LETTERS.items()}
-BG = (30, 31, 36)
-TEXT = (235, 235, 240)
+TRANSPARENT = (0, 0, 0, 0)
+# Chosen 2026-10-03: the gray with equal contrast (4.35:1) on GitHub's light page
+# (#ffffff) and dark page (#0d1117), so the images read in either theme.
+TEXT = (121, 121, 121)
 HIDDEN = (70, 72, 80)
 TILE, GAP, MARGIN = 34, 3, 40
 BOARD = SIZE * TILE + (SIZE - 1) * GAP
@@ -26,10 +28,11 @@ NAMES = [
     "turned 180°",
     "turned 270°",
     "mirrored",
-    "mirrored + 90°",
-    "mirrored + 180°",
-    "mirrored + 270°",
+    "turned 90°,\nthen mirrored",
+    "turned 180°,\nthen mirrored",
+    "turned 270°,\nthen mirrored",
 ]
+TOP = 92
 # 4 clicks, one of them (D3) on the middle cross; the two oranges pin red to D4.
 FOUR_CLICKS = "A1Y D3O D5O E2B"
 
@@ -71,23 +74,30 @@ def _board(draw, x, y, cells, star=None) -> None:
             )
         if i == star:
             box = [x0 - 2, y0 - 2, x0 + TILE + 2, y0 + TILE + 2]
-            draw.rounded_rectangle(box, 7, outline="white", width=3)
+            draw.rounded_rectangle(box, 7, outline=TEXT, width=3)
             _star(draw, x0 + TILE / 2, y0 + TILE / 2, TILE * 0.3)
 
 
 def _canvas(title: str, rows: int) -> tuple[Image.Image, ImageDraw.ImageDraw]:
     width = 4 * (BOARD + MARGIN) + MARGIN
-    img = Image.new("RGB", (width, rows * (BOARD + 70) + 90), BG)
+    img = Image.new("RGBA", (width, rows * (BOARD + 70) + TOP + 20), TRANSPARENT)
     draw = ImageDraw.Draw(img)
     draw.text((20, 18), title, font=_font(24, bold=True), fill=TEXT)
+    note = "All turns are counterclockwise."
+    draw.text((20, 54), note, font=_font(19, bold=True), fill=TEXT)
     return img, draw
 
 
 def _place(draw, j: int, label: str) -> tuple[int, int]:
     x = MARGIN + (j % 4) * (BOARD + MARGIN)
-    y = 70 + (j // 4) * (BOARD + 70)
-    draw.text(
-        (x + BOARD / 2, y + BOARD + 22), label, font=_font(17), fill=TEXT, anchor="mm"
+    y = TOP + (j // 4) * (BOARD + 70)
+    draw.multiline_text(
+        (x + BOARD / 2, y + BOARD + 12),
+        label,
+        font=_font(19, bold=True),
+        fill=TEXT,
+        anchor="ma",
+        align="center",
     )
     return x, y
 

@@ -134,6 +134,7 @@ class _FakeResponse:
 class _FakeInteraction:
     def __init__(self, user_id):
         self.user = type("User", (), {"id": user_id})()
+        self.guild_id = None
         self.response = _FakeResponse()
 
 
@@ -321,6 +322,7 @@ def test_fifth_sphere_in_the_popup_shows_the_stats_screen(service):
     [
         ("oc", "chat_input"),
         ("colorblindmode", "chat_input"),
+        ("spherebonus", "chat_input"),
         ("Solve sphere board", "message"),
     ],
 )

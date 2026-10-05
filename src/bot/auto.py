@@ -69,8 +69,14 @@ class AutoTracker:
             return
         self._forget_old_games()
         letters = self.service.letters_for.get(owner, False)
-        embed, file, analysis = await solve_and_draw(self.service, board.state, letters)
-        view = BoardView(self.service, board.state, owner, analysis, manual=False)
+        server = message.guild.id if message.guild else None
+        payouts = self.service.payouts_for(owner, server)
+        embed, file, analysis = await solve_and_draw(
+            self.service, board.state, letters, payouts
+        )
+        view = BoardView(
+            self.service, board.state, owner, analysis, manual=False, payouts=payouts
+        )
         reply = await message.reply(
             embed=embed, file=file, view=view, mention_author=False
         )
@@ -92,7 +98,7 @@ class AutoTracker:
             if board.state == game.view.state:
                 return
             embed, file, analysis = await solve_and_draw(
-                self.service, board.state, game.view.letters
+                self.service, board.state, game.view.letters, game.view.payouts
             )
             game.view.advance(board.state, analysis)
             game.view.refresh()
