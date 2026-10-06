@@ -173,11 +173,15 @@ def test_spherebonus_command_takes_two_optional_bounded_numbers():
 
 
 def _run_oc(service, server_id):
+    from src.bot.manual import GAMES, register_manual
+    from src.bot.oq import OqService
+
     tree = app_commands.CommandTree(discord.Client(intents=discord.Intents.default()))
-    register(tree, service)
+    register_manual(tree, service, OqService(service))
     interaction = _FakeCommandInteraction(PLAYER)
     interaction.guild_id = server_id
-    asyncio.run(tree.get_command("oc").callback(interaction, board=ONE_CLICK_LEFT))
+    command = tree.get_command("manual-input")
+    asyncio.run(command.callback(interaction, game=GAMES[0], board=ONE_CLICK_LEFT))
     ((_, sent),) = interaction.followup.sent
     return sent
 

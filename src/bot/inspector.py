@@ -16,13 +16,20 @@ def _buttons(component, path=()):
 
 
 def describe_message(message: discord.Message) -> str:
+    reference = getattr(message, "reference", None)
+    metadata = getattr(message, "interaction_metadata", None)
+    mentions = getattr(message, "mentions", [])
     lines = [
         f"author: {message.author} (id {message.author.id}, bot={message.author.bot})",
         f"message id: {message.id}",
-        f"content: {message.content[:300]!r}",
+        f"replies to: {reference.message_id if reference else None}",
+        f"from a command by: {metadata.user.id if metadata else None}",
+        f"mentions: {[user.id for user in mentions]}",
+        f"content: {message.content!r}",
         f"embeds: {len(message.embeds)}",
         "",
     ]
+    header = len(lines) - 1
     count = 0
     for row, top in enumerate(message.components):
         for path, item in _buttons(top, (row,)):
@@ -41,7 +48,7 @@ def describe_message(message: discord.Message) -> str:
                 f" | disabled={getattr(item, 'disabled', None)}"
                 f" | custom_id={getattr(item, 'custom_id', None)}"
             )
-    lines.insert(4, f"components found: {count}")
+    lines.insert(header, f"components found: {count}")
     return "\n".join(lines)
 
 

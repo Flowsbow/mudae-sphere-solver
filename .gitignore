@@ -5,3 +5,7 @@ __pycache__/
 .env
 settings.json
 settings.json.tmp
+stats.json
+stats.json.tmp
+my_stats.json
+my_stats.json.tmp

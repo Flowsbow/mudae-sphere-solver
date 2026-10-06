@@ -1,4 +1,5 @@
 import io
+import math
 from collections.abc import Collection, Mapping, Sequence
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -38,6 +39,9 @@ BLOCK_DARKEN = 0.25
 GOLD_MID, GOLD_DARK = (222, 172, 58), (140, 96, 28)
 # $oq's purple sphere; display color chosen 2026-10-05.
 PURPLE_GEM = (150, 85, 200)
+# $oq's rainbow sphere: stripes in these colors under a white star, chosen
+# 2026-10-05.
+RAINBOW = [GEM[c] for c in reversed(Color)] + [PURPLE_GEM]
 
 
 def click_values(
@@ -180,13 +184,47 @@ def _block(draw, cell: int, color, text: str, outlined: bool = False) -> None:
     )
 
 
+def _star(cx: int, cy: int, r: int) -> list[tuple[float, float]]:
+    return [
+        (
+            cx + (r if k % 2 == 0 else r * 0.45) * math.sin(k * math.pi / 5),
+            cy - (r if k % 2 == 0 else r * 0.45) * math.cos(k * math.pi / 5),
+        )
+        for k in range(10)
+    ]
+
+
+def _rainbow_block(img: Image.Image, cell: int, outlined: bool = False) -> None:
+    x0, y0, x1, y1 = _tile_box(cell)
+    stripes = Image.new("RGB", img.size)
+    stripe_draw = ImageDraw.Draw(stripes)
+    band = (y1 - y0) / len(RAINBOW)
+    for k, color in enumerate(RAINBOW):
+        stripe_draw.rectangle(
+            [x0, y0 + k * band, x1, y0 + (k + 1) * band],
+            fill=_mix(color, (0, 0, 0), BLOCK_DARKEN),
+        )
+    mask = Image.new("L", img.size, 0)
+    ImageDraw.Draw(mask).rounded_rectangle([x0, y0, x1, y1], radius=_px(8), fill=255)
+    img.paste(stripes, mask=mask)
+    draw = ImageDraw.Draw(img)
+    draw.polygon(_star((x0 + x1) // 2, (y0 + y1) // 2, _px(18)), fill=(255, 255, 255))
+    if outlined:
+        draw.rounded_rectangle(
+            [x0, y0, x1, y1], radius=_px(8), outline=BEST_OUTLINE, width=_px(3)
+        )
+
+
 def purples_all_known(analysis: OqAnalysis) -> bool:
     return not any(analysis.purple_prob.values())
 
 
-def render_oq(codes: Sequence[int], analysis: OqAnalysis) -> bytes:
+def render_oq(
+    codes: Sequence[int], analysis: OqAnalysis, rainbow: bool = False
+) -> bytes:
     """$oq board: counts as numbered blocks; hidden tiles show their purple odds,
-    or their payout once every purple is known."""
+    or their payout once every purple is known. With rainbow, the 4th purple is
+    drawn as a rainbow sphere instead of red."""
     img, draw, size = _canvas()
     known = purples_all_known(analysis)
     top = max(analysis.purple_prob.values(), default=0.0)
@@ -197,6 +235,8 @@ def render_oq(codes: Sequence[int], analysis: OqAnalysis) -> bytes:
             _block(draw, cell, GEM[Color(code)], str(code))
         elif code == PURPLE:
             _block(draw, cell, PURPLE_GEM, "P")
+        elif code in (RED, RED_SHOWN) and rainbow:
+            _rainbow_block(img, cell, outlined=best)
         elif code in (RED, RED_SHOWN):
             _block(draw, cell, GEM[Color.RED], "R", outlined=best)
         else:

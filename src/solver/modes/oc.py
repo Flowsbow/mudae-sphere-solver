@@ -99,8 +99,9 @@ class RedModel(Enum):
     UNIFORM_LAYOUT = "every legal layout equally likely"
 
 
-# ASSUMPTION, not observed. No game data is collected (decided 2026-09-26), so this
-# is unverified. See README, "Model assumption".
+# ASSUMPTION, not yet checked against game data. Since 2026-10-05 /global-stats
+# counts where red lands in auto-read games to test it. See README, "Model
+# assumption".
 DEFAULT_RED_MODEL = RedModel.UNIFORM_CELL
 
 

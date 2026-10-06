@@ -1,7 +1,6 @@
 import asyncio
 import io
 from pathlib import Path
-from typing import Literal
 
 import discord
 from discord import app_commands
@@ -9,7 +8,13 @@ from discord import app_commands
 from src.bot.mudae_reader import NotAnOcBoardError, read_oc_board
 from src.bot.settings import PlayerSettings, load_settings, save_settings
 from src.render.board_image import render, render_final
-from src.solver.board import BoardInputError, BoardState, Color, cell_name
+from src.solver.board import (
+    BoardInputError,
+    BoardState,
+    Color,
+    cell_name,
+    with_suggested_cell,
+)
 from src.solver.ev import Analysis, InconsistentBoardError, Solver
 from src.solver.modes.oc import BASE_PAYOUT, CLICKS, LAYOUTS, SYMMETRIES, prior
 from src.solver.payouts import with_bonus
@@ -129,12 +134,12 @@ def build_stats_reply(
             f"{i}. {cell_name(step.cell)} {step.color.name.title()} "
             f"+{payouts[step.color]:.0f}"
         )
-        if step.recommended is not None:
-            line += (
-                " (solver's pick)"
-                if step.cell == step.recommended
-                else f" (solver said {cell_name(step.recommended)})"
-            )
+        if step.cell == step.recommended:
+            line += " (solver's pick)"
+        elif step.followed:
+            line += " (as good as the solver's pick)"
+        elif step.recommended is not None:
+            line += f" (solver said {cell_name(step.recommended)})"
         lines.append(line)
     embed.add_field(name="Your clicks", value="\n".join(lines) or "None", inline=False)
     embed.set_image(url=f"attachment://{IMAGE_NAME}")
@@ -146,8 +151,10 @@ def build_stats_reply(
     return embed, discord.File(io.BytesIO(png), filename=IMAGE_NAME)
 
 
-def add_reveals(state: BoardState, text: str) -> BoardState:
-    tokens = text.split()
+def add_reveals(
+    state: BoardState, text: str, suggested: int | None = None
+) -> BoardState:
+    tokens = with_suggested_cell(text, suggested).split()
     if len(tokens) == 2 and len(tokens[0]) == 2 and len(tokens[1]) == 1:
         tokens = [tokens[0] + tokens[1]]
     added = BoardState.parse(" ".join(tokens))
@@ -194,6 +201,7 @@ class BoardView(discord.ui.View):
             if color is not None
         ]
         self.last_best = analysis.best if analysis else None
+        self.last_tied = analysis.tied if analysis else frozenset()
         self.expected = (
             sum(payouts[step.color] for step in self.history) + analysis.value
             if analysis
@@ -215,11 +223,14 @@ class BoardView(discord.ui.View):
             )
             if old is None and color is not None
         ]
-        recommended = self.last_best if len(new) == 1 else None
-        self.history += [Step(cell, color, recommended) for cell, color in new]
+        recommended, tied = (
+            (self.last_best, self.last_tied) if len(new) == 1 else (None, frozenset())
+        )
+        self.history += [Step(cell, color, recommended, tied) for cell, color in new]
         self.state = state
         if analysis is not None:
             self.last_best = analysis.best
+            self.last_tied = analysis.tied
 
     def finish(
         self, cells: tuple[Color | None, ...], clicked: frozenset[int]
@@ -242,7 +253,8 @@ class BoardView(discord.ui.View):
         if interaction.user.id == self.owner_id:
             return True
         await interaction.response.send_message(
-            "Only the person who ran /oc can update this board.", ephemeral=True
+            "Only the person who ran /manual-input can update this board.",
+            ephemeral=True,
         )
         return False
 
@@ -264,7 +276,7 @@ class BoardView(discord.ui.View):
 class AddSphereModal(discord.ui.Modal, title="Add a sphere"):
     sphere = discord.ui.TextInput(
         label="Cell and color",
-        placeholder="C4 G   (colors: R O Y G T B)",
+        placeholder="C4 G, or just G for the suggested cell (R O Y G T B)",
         max_length=40,
     )
 
@@ -275,7 +287,7 @@ class AddSphereModal(discord.ui.Modal, title="Add a sphere"):
     async def on_submit(self, interaction: discord.Interaction) -> None:
         view = self.board_view
         try:
-            state = add_reveals(view.state, self.sphere.value)
+            state = add_reveals(view.state, self.sphere.value, view.last_best)
         except BoardInputError as err:
             await interaction.response.send_message(
                 f"Couldn't add that: {err}", ephemeral=True
@@ -328,10 +340,17 @@ def set_auto(service: OcService, user_id: int, on: bool) -> str:
     service.save_settings()
     if on:
         return (
-            "Auto mode on. Type `$oc` and I'll solve Mudae's board as you play. "
-            "Turn it off with `/oc auto: off`."
+            "Auto-read on. Type `$oc` or `$oq` and I'll solve Mudae's board as you "
+            "play, in servers I've joined. Your finished games count toward "
+            "`/global-stats` and `/my-stats` (saved under your Discord ID; "
+            "`/my-stats delete: True` removes them). Run `/autoread` again to turn "
+            "it off."
         )
-    return "Auto mode off."
+    return "Auto-read off. Run `/autoread` again to turn it back on."
+
+
+def toggle_auto(service: OcService, user_id: int) -> str:
+    return set_auto(service, user_id, on=user_id not in service.auto_users)
 
 
 def toggle_colorblind(service: OcService, user_id: int) -> str:
@@ -376,30 +395,15 @@ def set_sphere_bonus(
 
 
 def register(tree: app_commands.CommandTree, service: OcService) -> None:
-    @tree.command(name="oc", description="Best next click for a $oc board")
+    @tree.command(
+        name="autoread",
+        description="Toggle solving your Mudae $oc and $oq boards as you play",
+    )
     @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(
-        board="Revealed cells, e.g. D4R B2T (R O Y G T B). Skip for a new game.",
-        auto="Solve your Mudae $oc games automatically.",
-    )
-    async def oc(
-        interaction: discord.Interaction,
-        board: str = "",
-        auto: Literal["on", "off"] | None = None,
-    ) -> None:
-        if auto is not None:
-            text = set_auto(service, interaction.user.id, auto == "on")
-            await interaction.response.send_message(text, ephemeral=True)
-            return
-        try:
-            state = BoardState.parse(board)
-        except BoardInputError as err:
-            await interaction.response.send_message(
-                f"Couldn't read that board: {err}", ephemeral=True
-            )
-            return
-        await send_board(interaction, service, state)
+    async def autoread(interaction: discord.Interaction) -> None:
+        text = toggle_auto(service, interaction.user.id)
+        await interaction.response.send_message(text, ephemeral=True)
 
     @tree.command(
         name="colorblindmode",

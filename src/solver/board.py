@@ -44,6 +44,16 @@ def cell_name(index: int) -> str:
     return ROW_NAMES[row] + COL_NAMES[col]
 
 
+def with_suggested_cell(text: str, suggested: int | None) -> str:
+    """A lone color as the first word means the suggested cell: "g" -> "C4 g"."""
+    words = text.split()
+    if words and len(words[0]) == 1:
+        if suggested is None:
+            raise BoardInputError("there's no suggested cell; type one, like C4 G")
+        words[0] = f"{cell_name(suggested)} {words[0]}"
+    return " ".join(words)
+
+
 @dataclass(frozen=True)
 class BoardState:
     revealed: tuple[Color | None, ...] = (None,) * N_CELLS

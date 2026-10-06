@@ -1,4 +1,10 @@
-from src.solver.board import N_CELLS, BoardInputError, cell_index, cell_name
+from src.solver.board import (
+    N_CELLS,
+    BoardInputError,
+    cell_index,
+    cell_name,
+    with_suggested_cell,
+)
 from src.solver.modes.oq import PURPLE, PURPLES_FOR_RED, RED, RED_SHOWN
 from src.solver.oq_ev import HIDDEN
 
@@ -54,8 +60,10 @@ def parse_board(text: str) -> tuple[int, ...]:
     return tuple(codes)
 
 
-def add_cells(codes: tuple[int, ...], text: str) -> tuple[int, ...]:
-    tokens = _tokens(text)
+def add_cells(
+    codes: tuple[int, ...], text: str, suggested: int | None = None
+) -> tuple[int, ...]:
+    tokens = _tokens(with_suggested_cell(text, suggested))
     if not tokens:
         raise BoardInputError("type a cell and a color, like C4 G")
     new = list(codes)

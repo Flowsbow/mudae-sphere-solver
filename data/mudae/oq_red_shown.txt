@@ -1,0 +1,31 @@
+author: Mudae#0807 (id 432610292342587392, bot=True)
+message id: 1556835418849157244
+content: 'You can click **7** times on the buttons below (2 minutes).\n**Find 3 purple spheres** (out of 4) to turn the 4th purple into a **red sphere** or more.\nColors define the number of neighboring purples (8 tiles around).\nBlue = 0, teal = 1, green = 2, yellow = 3, orange = 4\n\u200b'
+embeds: 0
+components found: 25
+
+0.0 | type=ComponentType.button | style=secondary | emoji=spU:1437140748423270441 | label=None | disabled=False | custom_id=(removed)
+0.1 | type=ComponentType.button | style=secondary | emoji=spU:1437140748423270441 | label=None | disabled=False | custom_id=(removed)
+0.2 | type=ComponentType.button | style=secondary | emoji=spU:1437140748423270441 | label=None | disabled=False | custom_id=(removed)
+0.3 | type=ComponentType.button | style=secondary | emoji=spB:1437140639987929108 | label=None | disabled=True | custom_id=(removed)
+0.4 | type=ComponentType.button | style=secondary | emoji=spU:1437140748423270441 | label=None | disabled=False | custom_id=(removed)
+1.0 | type=ComponentType.button | style=secondary | emoji=spU:1437140748423270441 | label=None | disabled=False | custom_id=(removed)
+1.1 | type=ComponentType.button | style=secondary | emoji=spB:1437140639987929108 | label=None | disabled=True | custom_id=(removed)
+1.2 | type=ComponentType.button | style=secondary | emoji=spU:1437140748423270441 | label=None | disabled=False | custom_id=(removed)
+1.3 | type=ComponentType.button | style=secondary | emoji=spU:1437140748423270441 | label=None | disabled=False | custom_id=(removed)
+1.4 | type=ComponentType.button | style=secondary | emoji=spU:1437140748423270441 | label=None | disabled=False | custom_id=(removed)
+2.0 | type=ComponentType.button | style=secondary | emoji=spU:1437140748423270441 | label=None | disabled=False | custom_id=(removed)
+2.1 | type=ComponentType.button | style=secondary | emoji=spU:1437140748423270441 | label=None | disabled=False | custom_id=(removed)
+2.2 | type=ComponentType.button | style=secondary | emoji=spU:1437140748423270441 | label=None | disabled=False | custom_id=(removed)
+2.3 | type=ComponentType.button | style=secondary | emoji=spT:1437140651614535680 | label=None | disabled=True | custom_id=(removed)
+2.4 | type=ComponentType.button | style=secondary | emoji=spT:1437140651614535680 | label=None | disabled=True | custom_id=(removed)
+3.0 | type=ComponentType.button | style=secondary | emoji=spP:1437140625844867244 | label=None | disabled=True | custom_id=(removed)
+3.1 | type=ComponentType.button | style=secondary | emoji=sp:1437140700604137554 | label=None | disabled=False | custom_id=(removed)
+3.2 | type=ComponentType.button | style=secondary | emoji=spU:1437140748423270441 | label=None | disabled=False | custom_id=(removed)
+3.3 | type=ComponentType.button | style=secondary | emoji=spG:1437140664193126441 | label=None | disabled=True | custom_id=(removed)
+3.4 | type=ComponentType.button | style=secondary | emoji=spP:1437140625844867244 | label=None | disabled=True | custom_id=(removed)
+4.0 | type=ComponentType.button | style=secondary | emoji=spU:1437140748423270441 | label=None | disabled=False | custom_id=(removed)
+4.1 | type=ComponentType.button | style=secondary | emoji=spU:1437140748423270441 | label=None | disabled=False | custom_id=(removed)
+4.2 | type=ComponentType.button | style=secondary | emoji=spT:1437140651614535680 | label=None | disabled=True | custom_id=(removed)
+4.3 | type=ComponentType.button | style=secondary | emoji=spU:1437140748423270441 | label=None | disabled=False | custom_id=(removed)
+4.4 | type=ComponentType.button | style=secondary | emoji=spP:1437140625844867244 | label=None | disabled=True | custom_id=(removed)

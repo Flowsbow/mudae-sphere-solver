@@ -9,6 +9,11 @@ class Step:
     cell: int
     color: Color
     recommended: int | None
+    tied: frozenset[int] = frozenset()  # cells as good as `recommended`
+
+    @property
+    def followed(self) -> bool:
+        return self.cell == self.recommended or self.cell in self.tied
 
 
 @dataclass(frozen=True)
@@ -33,5 +38,5 @@ def game_stats(
         (i for i, step in enumerate(steps, 1) if step.color is Color.RED), None
     )
     judged = [step for step in steps if step.recommended is not None]
-    followed = sum(step.cell == step.recommended for step in judged)
+    followed = sum(step.followed for step in judged)
     return GameStats(score, expected, tuple(steps), red_on_click, followed, len(judged))

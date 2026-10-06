@@ -58,3 +58,16 @@ def test_states_with_the_same_reveals_are_equal_and_hash_equal():
     b = BoardState.parse("D4R B2T")
     assert a == b
     assert hash(a) == hash(b)
+
+
+def test_a_lone_color_gets_the_suggested_cell():
+    from src.solver.board import with_suggested_cell
+
+    c4 = cell_index("C4")
+    assert with_suggested_cell("g", c4) == "C4 g"
+    assert with_suggested_cell("  G ", c4) == "C4 G"
+    assert with_suggested_cell("P E1 R", c4) == "C4 P E1 R"
+    assert with_suggested_cell("B2 T", c4) == "B2 T"
+    assert with_suggested_cell("", c4) == ""
+    with pytest.raises(BoardInputError, match="no suggested cell"):
+        with_suggested_cell("g", None)

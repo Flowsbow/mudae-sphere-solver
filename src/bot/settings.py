@@ -45,6 +45,14 @@ def load_settings(path: Path | None) -> PlayerSettings:
         ) from err
 
 
+def write_json_atomic(path: Path, data: dict) -> None:
+    # Write a temporary file, then swap it in, so a crash mid-write can't leave
+    # a half-written file behind.
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    os.replace(temporary, path)
+
+
 def save_settings(path: Path | None, settings: PlayerSettings) -> None:
     if path is None:
         return
@@ -59,8 +67,4 @@ def save_settings(path: Path | None, settings: PlayerSettings) -> None:
             )
         ],
     }
-    # Write a temporary file, then swap it in, so a crash mid-write can't leave
-    # a half-written settings file behind.
-    temporary = path.with_name(path.name + ".tmp")
-    temporary.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    os.replace(temporary, path)
+    write_json_atomic(path, data)

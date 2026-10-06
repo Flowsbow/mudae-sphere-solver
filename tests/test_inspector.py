@@ -56,3 +56,17 @@ def test_inspector_registers_as_a_message_command():
     register_inspector(tree)
     command = tree.get_command("Inspect sphere board", type=AppCommandType.message)
     assert command is not None
+
+
+def test_describe_keeps_the_whole_text_and_shows_replies_and_mentions():
+    message = _message()
+    message.content = "<:spB:1437140639987929108> **+10**\n" * 40
+    message.reference = _Obj(message_id=777)
+    message.mentions = [_Obj(id=55), _Obj(id=66)]
+    message.interaction_metadata = _Obj(user=_Obj(id=55))
+    dump = describe_message(message)
+    assert dump.count("spB:1437140639987929108") == 40
+    assert "replies to: 777" in dump
+    assert "mentions: [55, 66]" in dump
+    assert "from a command by: 55" in dump
+    assert "components found: 3" in dump

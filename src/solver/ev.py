@@ -21,6 +21,16 @@ class Analysis:
     cell_value: dict[int, float]
     color_probs: dict[int, dict[Color, float]]
 
+    @property
+    def tied(self) -> frozenset[int]:
+        """Every cell exactly as good as the best one."""
+        if self.best is None:
+            return frozenset()
+        top = self.cell_value[self.best]
+        return frozenset(
+            c for c, v in self.cell_value.items() if v >= top - TIE_TOLERANCE
+        )
+
 
 class Solver:
     def __init__(

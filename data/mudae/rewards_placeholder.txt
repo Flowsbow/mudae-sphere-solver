@@ -1,0 +1,5 @@
+author: Mudae#0807 (id 432610292342587392, bot=True)
+message id: 1556579971089170453
+content: '(Rewards appear here)'
+embeds: 0
+components found: 0

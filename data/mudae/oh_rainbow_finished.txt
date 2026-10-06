@@ -1,0 +1,31 @@
+author: Mudae#0807 (id 432610292342587392, bot=True)
+message id: 1556001101340352642
+content: '**+1** $oq and **+2,550** <:sp:1437140700604137554> from your invested spheres!\nYou can click **5** times on the buttons below (for 2 minutes. Only you can click).\nSpheres buttons have different values depending on their color, like kakera.\nBlue spheres unveil 3 buttons, teal unveil 1.\n\u200b\nMultiplier:'
+embeds: 0
+components found: 25
+
+0.0 | type=ComponentType.button | style=secondary | emoji=spB:1437140639987929108 | label=None | disabled=True | custom_id=(removed)
+0.1 | type=ComponentType.button | style=secondary | emoji=spB:1437140639987929108 | label=None | disabled=True | custom_id=(removed)
+0.2 | type=ComponentType.button | style=secondary | emoji=spB:1437140639987929108 | label=None | disabled=True | custom_id=(removed)
+0.3 | type=ComponentType.button | style=primary | emoji=spT:1437140651614535680 | label=None | disabled=True | custom_id=(removed)
+0.4 | type=ComponentType.button | style=secondary | emoji=spT:1437140651614535680 | label=None | disabled=True | custom_id=(removed)
+1.0 | type=ComponentType.button | style=secondary | emoji=spT:1437140651614535680 | label=None | disabled=True | custom_id=(removed)
+1.1 | type=ComponentType.button | style=primary | emoji=spB:1437140639987929108 | label=None | disabled=True | custom_id=(removed)
+1.2 | type=ComponentType.button | style=secondary | emoji=spB:1437140639987929108 | label=None | disabled=True | custom_id=(removed)
+1.3 | type=ComponentType.button | style=primary | emoji=spT:1437140651614535680 | label=None | disabled=True | custom_id=(removed)
+1.4 | type=ComponentType.button | style=secondary | emoji=spB:1437140639987929108 | label=None | disabled=True | custom_id=(removed)
+2.0 | type=ComponentType.button | style=secondary | emoji=spB:1437140639987929108 | label=None | disabled=True | custom_id=(removed)
+2.1 | type=ComponentType.button | style=secondary | emoji=spB:1437140639987929108 | label=None | disabled=True | custom_id=(removed)
+2.2 | type=ComponentType.button | style=secondary | emoji=spB:1437140639987929108 | label=None | disabled=True | custom_id=(removed)
+2.3 | type=ComponentType.button | style=secondary | emoji=spB:1437140639987929108 | label=None | disabled=True | custom_id=(removed)
+2.4 | type=ComponentType.button | style=secondary | emoji=spB:1437140639987929108 | label=None | disabled=True | custom_id=(removed)
+3.0 | type=ComponentType.button | style=secondary | emoji=spB:1437140639987929108 | label=None | disabled=True | custom_id=(removed)
+3.1 | type=ComponentType.button | style=secondary | emoji=spB:1437140639987929108 | label=None | disabled=True | custom_id=(removed)
+3.2 | type=ComponentType.button | style=secondary | emoji=spB:1437140639987929108 | label=None | disabled=True | custom_id=(removed)
+3.3 | type=ComponentType.button | style=secondary | emoji=spB:1437140639987929108 | label=None | disabled=True | custom_id=(removed)
+3.4 | type=ComponentType.button | style=primary | emoji=spW:1437140713795227809 | label=None | disabled=True | custom_id=(removed)
+4.0 | type=ComponentType.button | style=secondary | emoji=spD:1437140725492879471 | label=None | disabled=True | custom_id=(removed)
+4.1 | type=ComponentType.button | style=secondary | emoji=spB:1437140639987929108 | label=None | disabled=True | custom_id=(removed)
+4.2 | type=ComponentType.button | style=primary | emoji=spB:1437140639987929108 | label=None | disabled=True | custom_id=(removed)
+4.3 | type=ComponentType.button | style=secondary | emoji=spT:1437140651614535680 | label=None | disabled=True | custom_id=(removed)
+4.4 | type=ComponentType.button | style=secondary | emoji=spT:1437140651614535680 | label=None | disabled=True | custom_id=(removed)

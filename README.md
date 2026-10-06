@@ -5,35 +5,54 @@ shows the expected-value numbers behind each recommendation.
 
 **[Invite the bot to your server](https://discord.com/oauth2/authorize?client_id=1554720194046197840&permissions=117760&integration_type=0&scope=bot)**
 
-**[Add it to your account](https://discord.com/oauth2/authorize?client_id=1554720194046197840&integration_type=1&scope=applications.commands)** to use `/oc`, `/oq`, `/spherebonus`, `/colorblindmode` and **Solve sphere board** in any server or DM, even ones the bot isn't in. Auto mode still needs the bot in the server, because it has to read Mudae's messages.
+**[Add it to your account](https://discord.com/oauth2/authorize?client_id=1554720194046197840&integration_type=1&scope=applications.commands)** to use `/manual-input`, `/spherebonus`, `/colorblindmode`, `/global-stats`, `/my-stats` and **Solve sphere board** in any server or DM, even ones the bot isn't in. `/autoread` still needs the bot in the server, because it has to read Mudae's messages.
 
 **Contents:** [Status](#status) · [Using the bot](#using-the-bot) · [`$oc`](#oc) ·
-[`$oq`](#oq) · [Running your own copy](#running-your-own-copy) ·
-[Development](#development) · [License](#license)
+[`$oq`](#oq) · [Stats and privacy](#stats-and-privacy) ·
+[Running your own copy](#running-your-own-copy) · [Development](#development) ·
+[License](#license)
 
 ## Status
 
-Feature-complete. The bot solves `$oc` three ways: type the board into `/oc`,
-right-click a Mudae board, or turn on auto mode and it follows your game as you
-click. `$oq` is solved through `/oq`, with the board typed in; there is no auto mode
-or right-click for `$oq`. Both solvers' expected values are verified by simulation.
+The bot solves `$oc` three ways: type the board into `/manual-input`, right-click a
+Mudae board, or turn on `/autoread` and it follows your game as you click. `$oq` is
+solved through `/manual-input` or `/autoread`; right-click doesn't read `$oq` boards.
+Both solvers' expected values are verified by simulation. Games read by `/autoread`
+feed `/global-stats` and `/my-stats`, which check the solver against real games.
 `$oh` and `$ot` are not planned.
 
 ## Using the bot
 
-Type `/oc board: D4R B2T` in Discord: cells as row letter + column number, colors as
-R O Y G T B. For a new game, send just `/oc` without adding `board`.
+**`/manual-input`:** pick the game, then type the board. Cells are a row letter and
+column number. Leave out `board` for a new game. **Add a sphere** updates the board
+as you play. If you clicked the cell the solver suggested, type just its color, like
+`g`.
 
-**Auto mode:** run `/oc auto: on`, then play `$oc` as usual. The bot reads Mudae's
-board buttons directly (no image recognition), replies with the best click, and
-updates its reply every time you click. You can also right-click any Mudae board →
-Apps → **Solve sphere board**.
+- `$oc`: `/manual-input game: $oc board: D4R B2T`, with colors R O Y G T B.
+- `$oq`: `/manual-input game: $oq board: C3B B4G A1T`, with B T G Y O for 0 to 4
+  purples around a tile, P for a purple, and R for the red once it appears.
 
-**`$oq`:** type `/oq board: C3B B4G A1T`. Colors are B T G Y O for 0 to 4 purples
-around a tile, P for a purple, and R for the red once it appears. Send just `/oq` for a
-new game. **Add a sphere** updates the board as you play; after you click the red,
-add it again (like `D4 R`) so the bot counts that click. Hidden tiles show their chance
-of being purple, and once every purple is known they show what each tile pays.
+**`/autoread`:** turns auto-read on or off. With it on, play `$oc` or `$oq` as
+usual: the bot reads Mudae's board buttons directly (no image recognition), replies
+with the best click, and updates its reply every time you click. You can also
+right-click any Mudae `$oc` board → Apps → **Solve sphere board**. Two limits: typed
+commands are only recognized with Mudae's default `$` prefix, and in very busy
+servers the bot can lose track of a game, because discord.py only reports edits to
+messages still in its cache of recent ones.
+
+**`/global-stats` and `/my-stats`:** what the solver has done in real games, for
+everyone or just you. See [Stats and privacy](#stats-and-privacy).
+
+**`$oq` details:** with `/manual-input`, after you click the red, add it again (like
+`D4 R`) so the bot counts that click. Hidden tiles show their chance of being purple,
+and once every purple is known they show what each tile pays. When the game ends, the
+bot shows your score, whether you got the red, how many of the solver's picks you
+followed (a click exactly as good as the solver's counts as followed), and the best
+score anyone could have got knowing where every purple was. That last number is a
+ceiling, not a target: even perfect play can't reach it every game, because nobody
+sees the board in advance. With `/autoread` it's worked out on the real board Mudae
+reveals at the end; with `/manual-input` it's averaged over the boards that still
+fit.
 
 **Colorblind mode:** `/colorblindmode` toggles lettered color blocks (B T G Y O R)
 instead of spheres, for your boards from then on.
@@ -43,7 +62,10 @@ instead of spheres, for your boards from then on.
 pays you. The flat part is the +N on the "Additional spheres" line of `$kt`. It's saved
 per server, because server premium differs from server to server. Each sphere pays
 (base + flat) × (1 + percent/100), rounded half up. That matched 10 observed `$oq` and
-`$oh` payouts; it hasn't been checked in a `$oc` game yet.
+`$oh` payouts; it hasn't been checked in a `$oc` game yet. Server multipliers aren't
+included: they scale every sphere alike, so they never change the best click, but
+the bot's scores and expected values leave them out. Only "spheres gained" in the
+stats uses what Mudae actually paid.
 
 ## `$oc`
 
@@ -73,7 +95,9 @@ depends on how many neighbors and diagonal cells it has:
 Mudae's rules say where spheres can go, not how likely each board is. This solver
 assumes each of the 24 non-center cells is equally likely to hold red, and that every
 legal arrangement of the other spheres is equally likely once red is placed. This has
-not been checked against game data, so every recommendation is conditional on it.
+not been checked against game data yet, so every recommendation is conditional on it.
+`/global-stats` counts where red was in every auto-read `$oc` game, per cell, to
+settle it.
 
 The other natural reading is that every legal board is equally likely. Because the 8
 cells next to the center allow far more boards, that reading puts red there most of the
@@ -185,8 +209,8 @@ solver returns identical values and moves with and without it.
 
 ## `$oq`
 
-Solved by `/oq`. The solver is `src/solver/oq_ev.py`; its rules and payouts are in
-`src/solver/modes/oq.py`.
+Solved by `/manual-input game: $oq` or `/autoread`. The solver is
+`src/solver/oq_ev.py`; its rules and payouts are in `src/solver/modes/oq.py`.
 
 ### Rules as modeled
 
@@ -202,9 +226,13 @@ game:
 There are 12,650 ways to place 4 purples on 25 tiles. The solver assumes each is
 equally likely. Like the `$oc` model, this hasn't been checked against game data.
 
-Base payouts: purple 5, blue 10, teal 20, green 35 (seen in a game with no bonus) and
-red 150 (seen as 195 with a +6 / 25% bonus, which only base 150 gives). Yellow (55)
-and orange (90) haven't been seen in `$oq` yet, so they're assumed equal to `$oc`'s.
+Base payouts: purple 5, blue 10, teal 20, green 35, yellow 55, orange 90 and red 150
+(red also seen as 195 with a +6 / 25% bonus, which only base 150 gives).
+
+Sometimes the 4th purple turns into a rainbow sphere instead of red, worth 500. How
+often isn't known, so the solver plans for red until a rainbow actually appears, then
+values it at 500. The bot draws it as a striped tile with a star. `/global-stats`
+counts reds and rainbows separately, so the rate can be measured.
 
 ![A real finished $oq game, and the solver's purple odds three clicks in](docs/images/oq_board.png)
 
@@ -249,6 +277,13 @@ be purple; ties go to the higher expected payout, then the first tile in reading
 order. When several clicks lead to the same expected total, as happens once every
 purple is known, it suggests the one that pays the most right away.
 
+With 3 paid clicks left the cost also depends on how many placements still fit.
+`sim/time_oq_search.py` timed boards played by the early rule (at most 72 placements
+left, at most 6 s) and by random clicks (16 to 315 placements, up to 22 s); one board
+with four blues in a corner leaves 1,820 placements and took 43 s. So with 3 left
+and more than 100 placements, the rule plays one more click and the exact search
+starts at 2 left, where even 1,001 placements took 4 s.
+
 ### Choosing the early-game rule
 
 `sim/compare_oq_heuristics.py` played 2,000 games with each candidate rule, on the same
@@ -281,6 +316,45 @@ It uses test payouts that give every color a different value.
 
 All pass (limit 3 standard errors).
 
+## Stats and privacy
+
+`/global-stats` (public reply) and `/my-stats` (only you see it) show:
+
+- games played, spheres gained (the sum of Mudae's own "+N" lines, so bonuses and
+  multipliers are included), and how many of the solver's picks were followed;
+- spheres clicked per color, including `$oq` purples, reds and rainbows;
+- **`$oc` accuracy:** in games where every pick was followed (a click exactly as good
+  as the solver's counts), the average score against the solver's prediction (± one
+  standard error), and how often red was found against the predicted 99.98%;
+- **where red was** in `$oc`: a count for each cell, and the share on the outer ring
+  against 66.7% (the solver's model) and 14.3% (every legal board equally likely);
+- **`$oq` accuracy:** in games where every pick was followed, the share of the best
+  score possible with hindsight on the real board, and the score against the
+  solver's prediction once exact search took over (left out when a rainbow appeared
+  after that prediction, since it assumed a red).
+
+The accuracy figures describe followed games; they aren't a perfect test of the
+solver. A player who stops following after a bad start drops out of them.
+
+**What counts:** only games read by `/autoread`, never typed boards, which could
+have typos. Right after a board, Mudae posts a "(Rewards appear here)" message and
+adds a line to it for every click. A game counts only if exactly one rewards message
+appeared within 2 seconds of its board, and its lines match the clicks the bot saw,
+color for color, in order. Otherwise it's left out.
+
+**What's stored:** running totals (counts, sums and sums of squares), never a record
+of each game.
+
+- `stats.json` holds the global totals, with no user, server, channel or message IDs.
+- `my_stats.json` holds each player's totals under their Discord user ID, the same
+  way `settings.json` stores `/autoread`, `/colorblindmode` and `/spherebonus`
+  choices. `/my-stats delete: True` removes yours; the global totals keep the games.
+
+Each file is written atomically after every change, so a crash can't leave one
+half-written, and none of them is ever committed to this repository. The two stats
+files are written one after the other, so a crash between the two writes would leave
+them one game apart.
+
 ## Running your own copy
 
 Allowed under the [license](LICENSE) as long as the link to this repository stays
@@ -288,9 +362,12 @@ on every board message, as it does here.
 
 1. Create a bot at discord.com/developers/applications and invite it with the
    `bot` and `applications.commands` scopes.
-2. Copy `.env.example` to `.env` and fill in `DISCORD_TOKEN` (and, for development,
+2. Install Python 3.11 or newer, then, in the repository folder:
+   `python -m venv .venv`, activate it (`.venv\Scripts\Activate.ps1` on Windows,
+   `source .venv/bin/activate` elsewhere), and `pip install -r requirements.txt`.
+3. Copy `.env.example` to `.env` and fill in `DISCORD_TOKEN` (and, for development,
    `DISCORD_GUILD_ID` so commands appear in your test server immediately).
-3. `python -m src.bot.main`
+4. `python -m src.bot.main`
 
 Auto mode needs **Message Content Intent** enabled on your bot's developer page.
 

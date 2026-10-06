@@ -49,6 +49,11 @@ LAYOUTS.flags.writeable = False
 
 # Spheres per code with no bonus. Purple 5, blue 10, teal 20, green 35: Flow's $oq
 # game on the server with no bonus (reported 2026-10-03). Red 150: Flow saw 195 at
-# +6 / 25%, which with_bonus (src/solver/payouts.py) gives only for base 150.
-# Yellow 55 and orange 90 are ASSUMED equal to $oc's; not yet seen in $oq.
+# +6 / 25%, which with_bonus (src/solver/payouts.py) gives only for base 150, and
+# 150 with no bonus in data/mudae/oq_rewards_finished.txt (2026-10-05). Yellow 55:
+# the same rewards message. Orange 90: Flow, 2026-10-05.
 BASE_PAYOUT = {0: 10, 1: 20, 2: 35, 3: 55, 4: 90, PURPLE: 5, RED: 150}
+# Sometimes the 4th purple turns rainbow instead of red (Flow, 2026-10-05). It pays
+# 500 with no bonus (Flow, 2026-10-05). How often it happens isn't known, so the
+# solver plans for red until a rainbow actually appears.
+RAINBOW = 500

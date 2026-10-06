@@ -105,3 +105,59 @@ def test_equal_totals_go_to_the_bigger_payout_first(solver):
     result = solver.analyze(codes)
     assert result.value == pytest.approx(195 + 3 * 70 + 2 * 51)
     assert result.best == cell_index("D4")
+
+
+def test_early_rule_ties_are_cells_with_the_same_odds_and_payout(solver):
+    analysis = solver.analyze((HIDDEN,) * 25)
+    assert not analysis.exact
+    assert analysis.best in analysis.tied
+    # On an empty board every inner tile has the same odds and payout chances.
+    inner = {cell_index(f"{r}{c}") for r in "BCD" for c in "234"}
+    assert analysis.tied == inner
+    for cell in analysis.tied:
+        assert analysis.purple_prob[cell] == pytest.approx(
+            analysis.purple_prob[analysis.best]
+        )
+        assert analysis.cell_payout[cell] == pytest.approx(
+            analysis.cell_payout[analysis.best]
+        )
+
+
+def test_exact_ties_are_cells_with_the_same_value(solver):
+    # Every purple is known here, so all collecting orders tie.
+    codes = board(A1=PURPLE, B2=PURPLE, C3=PURPLE, D4=RED_SHOWN)
+    analysis = solver.analyze(codes)
+    assert analysis.exact
+    top = analysis.cell_value[analysis.best]
+    assert analysis.tied == {
+        c for c, v in analysis.cell_value.items() if v == pytest.approx(top)
+    }
+    assert len(analysis.tied) > 1
+
+
+def test_too_many_placements_with_three_clicks_left_waits_for_two():
+    # The audit's slow board: 1,820 placements fit, 42.6 s for an exact search.
+    codes = board(A1=0, A2=0, B1=0, B2=0)
+    capped = OqSolver(LAYOUTS, PAY)
+    assert len(capped.consistent(codes)) == 1820
+    analysis = capped.analyze(codes)
+    assert analysis.clicks_left == EXACT_CLICKS
+    assert not analysis.exact and analysis.best is not None
+    assert capped._memo == {}
+
+
+def test_few_placements_with_three_clicks_left_still_search_exactly(solver):
+    codes = board(C3=0, B4=2, A1=1, E5=0)  # 4 paid clicks used
+    assert len(solver.consistent(codes)) <= 100
+    assert solver.analyze(codes).exact
+
+
+def test_best_on_board_is_the_hindsight_of_that_one_board(solver):
+    layout = LAYOUTS[1234]
+    known = solver.best_on_board(tuple(int(x) for x in layout))
+    assert known == pytest.approx(solver._known_value((HIDDEN,) * 25, layout))
+
+
+def test_best_on_board_refuses_a_board_that_breaks_the_rules(solver):
+    with pytest.raises(InconsistentBoardError):
+        solver.best_on_board((0,) * 25)

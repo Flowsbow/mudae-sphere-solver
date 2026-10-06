@@ -69,6 +69,8 @@ def main() -> int:
     parser.add_argument("--flat", type=int, default=0, help="sphere bonus, +N")
     parser.add_argument("--percent", type=int, default=0, help="sphere bonus, %%")
     args = parser.parse_args()
+    if args.games < 2:
+        parser.error("--games must be at least 2 to estimate a standard error")
 
     payouts = with_bonus(BASE_PAYOUT, args.flat, args.percent)
     solver = Solver(LAYOUTS, prior(), payouts, CLICKS, SYMMETRIES)
@@ -91,7 +93,7 @@ def main() -> int:
     print(f"difference:       {mean - predicted:+.3f} = {z:+.2f} SE")
 
     # A correct solver lands within 3 SE of its prediction 99.7% of the time.
-    if abs(z) > 3:
+    if not np.isfinite(z) or abs(z) > 3:
         print("FAIL: simulation disagrees with ev.py")
         return 1
     print("PASS")

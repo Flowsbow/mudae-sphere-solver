@@ -2,7 +2,10 @@ from dataclasses import dataclass
 
 import discord
 
-from src.solver.board import N_CELLS, BoardState, Color
+from src.solver.board import N_CELLS, BoardInputError, BoardState, Color
+from src.solver.modes.oq import PURPLE, RED, RED_SHOWN
+from src.solver.oq_board import check
+from src.solver.oq_ev import HIDDEN
 
 # Everything below comes from Flow's inspector dumps of one real $oc game,
 # 2026-09-29: data/mudae/oc_fresh.txt, oc_midgame.txt, oc_finished.txt.
@@ -72,7 +75,78 @@ def board_from_buttons(buttons: list[ButtonInfo]) -> MudaeBoard:
     return MudaeBoard(BoardState(tuple(cells)), finished, clicked)
 
 
+def is_sphere_board(message: discord.Message) -> bool:
+    # Every $oc, $oq and $oh button in Flow's dumps uses an "sp..." emoji.
+    return message.author.id == MUDAE_ID and any(
+        button.emoji is not None and button.emoji.startswith("sp")
+        for button in buttons_of(message)
+    )
+
+
 def read_oc_board(message: discord.Message) -> MudaeBoard:
     if message.author.id != MUDAE_ID:
         raise NotAnOcBoardError("that message isn't from Mudae")
+    if OQ_RULES in message.content:
+        raise NotAnOcBoardError("that's a $oq board")
     return board_from_buttons(buttons_of(message))
+
+
+# $oq, from Flow's dumps of real games, 2026-10-04 and 2026-10-05:
+# data/mudae/oq_fresh.txt, oq_red_shown.txt, oq_red_midgame.txt,
+# oq_red_finished.txt and oq_finished.txt.
+OQ_RULES = "**Find 3 purple spheres**"
+OQ_EMOJI_CODE = {"spB": 0, "spT": 1, "spG": 2, "spY": 3, "spO": 4, "spP": PURPLE}
+# The 4th purple once 3 are found: red ("sp"), or rainbow ("spW", Flow,
+# 2026-10-05). Clickable while shown (oq_red_shown.txt), disabled once clicked.
+FOURTH_PURPLE = {"sp": "RED", "spW": "RAINBOW"}
+
+
+class NotAnOqBoardError(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class OqMudaeBoard:
+    codes: tuple[int, ...]  # only what the player has revealed
+    finished: bool
+    rainbow: bool  # the 4th purple turned rainbow instead of red
+    # The whole board once the game is over (Mudae reveals every tile): purple
+    # counts, with all 4 purples as PURPLE, as in src/solver/modes/oq.py LAYOUTS.
+    layout: tuple[int, ...] | None = None
+
+
+def _oq_code(button: ButtonInfo, finished: bool) -> int:
+    if button.emoji == HIDDEN_EMOJI:
+        return HIDDEN
+    if button.emoji in FOURTH_PURPLE:
+        if finished:
+            return RED if button.style == CLICKED_STYLE else RED_SHOWN
+        return RED if button.disabled else RED_SHOWN
+    if button.emoji not in OQ_EMOJI_CODE:
+        raise NotAnOqBoardError(f"unknown emoji {button.emoji!r}")
+    # At game end Mudae shows the whole board; only blurple tiles were clicked.
+    if finished and button.style != CLICKED_STYLE:
+        return HIDDEN
+    return OQ_EMOJI_CODE[button.emoji]
+
+
+def read_oq_board(message: discord.Message) -> OqMudaeBoard:
+    if message.author.id != MUDAE_ID or OQ_RULES not in message.content:
+        raise NotAnOqBoardError("that isn't a Mudae $oq board")
+    buttons = buttons_of(message)
+    if len(buttons) != N_CELLS:
+        raise NotAnOqBoardError(f"expected {N_CELLS} buttons, found {len(buttons)}")
+    finished = all(button.emoji != HIDDEN_EMOJI for button in buttons)
+    codes = tuple(_oq_code(button, finished) for button in buttons)
+    try:
+        check(codes)
+    except BoardInputError as err:
+        raise NotAnOqBoardError(str(err)) from err
+    rainbow = any(button.emoji == "spW" for button in buttons)
+    layout = None
+    if finished:
+        layout = tuple(
+            PURPLE if b.emoji in FOURTH_PURPLE else OQ_EMOJI_CODE[b.emoji]
+            for b in buttons
+        )
+    return OqMudaeBoard(codes, finished, rainbow, layout)

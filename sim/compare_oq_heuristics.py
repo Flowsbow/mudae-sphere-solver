@@ -35,7 +35,8 @@ PAY = {0: 20, 1: 33, 2: 51, 3: 70, 4: 90, PURPLE: 14, RED: 195}
 ENDGAME = 3  # exact for the last 3 paid clicks, as in the bot
 SEED = 7
 
-EXACT = OqSolver(LAYOUTS, PAY)
+# Always exact for the last 3 paid clicks, as when the README's table was made.
+EXACT = OqSolver(LAYOUTS, PAY, max_placements=None)
 
 
 def _probs(codes, idx):

@@ -1,4 +1,4 @@
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -19,6 +19,11 @@ COUNTS = range(5)  # 0-4 purple neighbors: blue, teal, green, yellow, orange
 # Exact search costs 0.3 s with 2 paid clicks left, 5.7 s with 3 and 87 s with 4
 # (measured 2026-09-30), so earlier clicks use the early-game rule instead.
 EXACT_CLICKS = 3
+# With 3 paid clicks left the cost depends on how many placements still fit. In
+# sim/time_oq_search.py (2026-10-05, shared 2-core 2.1 GHz Xeon), boards with 90
+# or fewer took at most 8.1 s; 165 to 1,820 took 4 to 43 s. Above this many, the
+# rule plays one more click. With 2 left, even 1,001 placements took 4.1 s.
+EXACT_MAX_PLACEMENTS = 100
 # Positions kept between requests. About 320 bytes each (measured 2026-09-30),
 # so at most about 0.3 GB.
 MEMO_LIMIT = 1_000_000
@@ -33,10 +38,20 @@ class OqAnalysis:
     cell_value: dict[int, float]  # only when exact
     purple_prob: dict[int, float]
     cell_payout: dict[int, float]  # average spheres from clicking that cell now
+    tied: frozenset[int] = frozenset()  # cells exactly as good as `best`
+
+
+def _same(a: tuple[float, float], b: tuple[float, float]) -> bool:
+    return all(abs(x - y) <= TIE_TOLERANCE for x, y in zip(a, b, strict=True))
 
 
 def clicks_used(codes: tuple[int, ...]) -> int:
     return sum(1 for x in codes if 0 <= x <= RED)
+
+
+def spheres_collected(codes: tuple[int, ...], payouts: Mapping[int, float]) -> float:
+    """Every revealed tile was clicked, except a red that is only shown."""
+    return float(sum(payouts[x] for x in codes if x not in (HIDDEN, RED_SHOWN)))
 
 
 class OqSolver:
@@ -51,10 +66,12 @@ class OqSolver:
         payouts: Mapping[int, float],
         clicks: int = CLICKS,
         symmetries: tuple[tuple[int, ...], ...] = (),
+        max_placements: int | None = EXACT_MAX_PLACEMENTS,
     ) -> None:
         self.layouts = layouts
         self.clicks = clicks
         self.symmetries = symmetries
+        self.max_placements = max_placements
         self.pay = np.zeros(RED_SHOWN + 1)
         for code, value in payouts.items():
             self.pay[code] = value
@@ -78,27 +95,63 @@ class OqSolver:
         }
         if clicks_left == 0:
             return OqAnalysis(0, None, True, 0.0, {}, purple_prob, payout)
-        if clicks_left > EXACT_CLICKS and len(idx) > 1:
-            best = self.early_pick(codes, idx)
-            return OqAnalysis(clicks_left, best, False, None, {}, purple_prob, payout)
+        too_many = (
+            clicks_left == EXACT_CLICKS
+            and self.max_placements is not None
+            and len(idx) > self.max_placements
+        )
+        if (clicks_left > EXACT_CLICKS or too_many) and len(idx) > 1:
+            keys = self._early_keys(codes, idx)
+            best = max(keys, key=lambda c: (*keys[c], -c))
+            tied = frozenset(c for c, key in keys.items() if _same(key, keys[best]))
+            return OqAnalysis(
+                clicks_left, best, False, None, {}, purple_prob, payout, tied
+            )
         if len(self._memo) > MEMO_LIMIT:
             self._memo.clear()
         values = self._cell_values(codes, idx)
         top = max(values.values())
-        tied = [c for c, v in values.items() if v >= top - TIE_TOLERANCE]
+        tied = frozenset(c for c, v in values.items() if v >= top - TIE_TOLERANCE)
         best = max(tied, key=lambda c: (payout[c], -c))
-        return OqAnalysis(clicks_left, best, True, top, values, purple_prob, payout)
+        return OqAnalysis(
+            clicks_left, best, True, top, values, purple_prob, payout, tied
+        )
+
+    def best_with_hindsight(self, codes: tuple[int, ...]) -> tuple[float, int]:
+        """The most anyone could collect knowing every purple's place from the
+        start, averaged over the placements that fit `codes`; and how many fit."""
+        idx = self.consistent(codes)
+        start = (HIDDEN,) * N_CELLS
+        total = sum(self._known_value(start, self.layouts[i]) for i in idx)
+        return total / len(idx), len(idx)
+
+    def best_on_board(self, layout: Sequence[int]) -> float:
+        """The most anyone could collect on this exact board, knowing every
+        purple's place from the start."""
+        matches = np.flatnonzero((self.layouts == np.asarray(layout)).all(axis=1))
+        if len(matches) != 1:
+            raise InconsistentBoardError("that board breaks the $oq rules as modeled")
+        return self._known_value((HIDDEN,) * N_CELLS, self.layouts[matches[0]])
 
     def early_pick(self, codes: tuple[int, ...], idx: np.ndarray) -> int:
         """The cell most likely to be purple; ties go to the higher expected payout.
 
         Chosen by simulation over alternatives: see sim/compare_oq_heuristics.py.
         """
+        keys = self._early_keys(codes, idx)
+        return max(keys, key=lambda c: (*keys[c], -c))
+
+    def _early_keys(
+        self, codes: tuple[int, ...], idx: np.ndarray
+    ) -> dict[int, tuple[float, float]]:
         purple = self.is_purple[idx].mean(axis=0)
         pay = self.pay[np.where(self.is_purple[idx], 0, self.layouts[idx])]
         pay = np.where(self.is_purple[idx], 0.0, pay).mean(axis=0)
-        hidden = [c for c in range(N_CELLS) if codes[c] == HIDDEN]
-        return max(hidden, key=lambda c: (purple[c], pay[c], -c))
+        return {
+            c: (float(purple[c]), float(pay[c]))
+            for c in range(N_CELLS)
+            if codes[c] == HIDDEN
+        }
 
     def consistent(self, codes: tuple[int, ...]) -> np.ndarray:
         mask = np.ones(len(self.layouts), dtype=bool)

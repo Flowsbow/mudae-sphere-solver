@@ -15,8 +15,10 @@ from src.bot.commands import (
     build_reply,
     register,
 )
+from src.bot.manual import register_manual
+from src.bot.oq import OqService
 from src.render.board_image import render
-from src.solver.board import BoardInputError, BoardState
+from src.solver.board import BoardInputError, BoardState, Color
 from src.solver.modes.oc import BASE_PAYOUT
 
 
@@ -30,17 +32,24 @@ def _analyze(service, text):
     return state, asyncio.run(service.analyze(state))
 
 
-def test_register_adds_the_oc_command_with_optional_board_and_auto(service):
+def _tree(service):
     tree = app_commands.CommandTree(discord.Client(intents=discord.Intents.default()))
     register(tree, service)
-    command = tree.get_command("oc")
-    assert command is not None
-    board, auto = command.parameters
-    assert board.name == "board"
-    assert not board.required
-    assert auto.name == "auto"
-    assert not auto.required
-    assert [c.value for c in auto.choices] == ["on", "off"]
+    register_manual(tree, service, OqService(service))
+    return tree
+
+
+def test_manual_input_asks_for_the_game_then_an_optional_board(service):
+    tree = _tree(service)
+    assert tree.get_command("oc") is None and tree.get_command("oq") is None
+    game, board = tree.get_command("manual-input").parameters
+    assert game.name == "game" and game.required
+    assert [(c.name, c.value) for c in game.choices] == [("$oc", "oc"), ("$oq", "oq")]
+    assert board.name == "board" and not board.required
+
+
+def test_autoread_is_its_own_command_with_no_options(service):
+    assert _tree(service).get_command("autoread").parameters == []
 
 
 def test_reply_names_the_best_cell_and_attaches_the_image(service):
@@ -260,7 +269,7 @@ def _mudae_message(dump_name, author_id=None):
         ]
         rows.append(type("Row", (), {"children": children})())
     author = type("Author", (), {"id": author_id or MUDAE_ID})()
-    return type("Msg", (), {"author": author, "components": rows})()
+    return type("Msg", (), {"author": author, "content": "", "components": rows})()
 
 
 def _right_click_solve(service, message):
@@ -309,8 +318,8 @@ def test_fifth_sphere_in_the_popup_shows_the_stats_screen(service):
     (edit,) = interaction.edits
     assert edit["embed"].title == "Game over: 440 spheres"
     fields = {f.name: f.value for f in edit["embed"].fields}
-    # Cells typed into /oc have no click order, so they're listed in board order:
-    # C5, D4, D5, E4, then the popup's E3.
+    # Cells typed into /manual-input have no click order, so they're listed in
+    # board order: C5, D4, D5, E4, then the popup's E3.
     assert fields["Red"] == "Found on click 2"
     assert fields["Solver picks followed"].endswith("of 1")
     assert view.add_sphere.disabled
@@ -320,7 +329,8 @@ def test_fifth_sphere_in_the_popup_shows_the_stats_screen(service):
 @pytest.mark.parametrize(
     ("name", "kind"),
     [
-        ("oc", "chat_input"),
+        ("manual-input", "chat_input"),
+        ("autoread", "chat_input"),
         ("colorblindmode", "chat_input"),
         ("spherebonus", "chat_input"),
         ("Solve sphere board", "message"),
@@ -329,11 +339,50 @@ def test_fifth_sphere_in_the_popup_shows_the_stats_screen(service):
 def test_commands_can_be_installed_to_a_user_account(service, name, kind):
     from discord.enums import AppCommandType
 
-    tree = app_commands.CommandTree(discord.Client(intents=discord.Intents.default()))
-    register(tree, service)
+    tree = _tree(service)
     command = tree.get_command(name, type=AppCommandType[kind])
     payload = command.to_dict(tree)
     # Discord's codes: install 0 = server, 1 = user; context 0 = server, 1 = bot DM,
     # 2 = group DM or other DMs.
     assert sorted(payload["integration_types"]) == [0, 1]
     assert sorted(payload["contexts"]) == [0, 1, 2]
+
+
+def test_a_lone_color_in_the_popup_means_the_solvers_pick(service):
+    async def run():
+        state = BoardState.parse("D4R B2T")
+        view = BoardView(service, state, 1, await service.analyze(state))
+        modal = AddSphereModal(view)
+        modal.sphere._value = "g"
+        await modal.on_submit(_FakeModalInteraction(1))
+        return view
+
+    view = asyncio.run(run())
+    assert view.state == BoardState.parse("D4R B2T C4G")  # the solver said C4
+    last = view.history[-1]
+    assert last.cell == last.recommended
+
+
+def test_a_click_as_good_as_the_solvers_pick_counts_as_followed(service):
+    from src.bot.commands import build_stats_reply
+    from src.solver.board import cell_index
+    from src.solver.stats import game_stats
+
+    empty = asyncio.run(service.analyze(BoardState()))
+    assert empty.tied == {cell_index(c) for c in ("B2", "B4", "D2", "D4")}
+    other = next(iter(empty.tied - {empty.best}))
+
+    async def make():
+        return BoardView(service, BoardState(), 1, empty, manual=False)
+
+    view = asyncio.run(make())
+    view.advance(
+        BoardState(tuple(Color.TEAL if i == other else None for i in range(25)))
+    )
+    (step,) = view.history
+    assert step.recommended == empty.best and step.followed
+    stats = game_stats(view.history, BASE_PAYOUT, None)
+    assert (stats.followed, stats.judged) == (1, 1)
+    embed, _ = build_stats_reply(stats, view.state.revealed, frozenset({other}), False)
+    fields = {f.name: f.value for f in embed.fields}
+    assert "(as good as the solver's pick)" in fields["Your clicks"]
