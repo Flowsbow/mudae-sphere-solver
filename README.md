@@ -1,16 +1,16 @@
 # mudae-sphere-solver
 
-A Discord bot that recommends moves in Mudae's `$oc` and `$oq` sphere minigames and
-shows the expected-value numbers behind each recommendation.
+A Discord bot that recommends moves in Mudae's `$oc`, `$oq` and `$oh` sphere
+minigames and shows the numbers behind each recommendation.
 
 **[Invite the bot to your server](https://discord.com/oauth2/authorize?client_id=1554720194046197840&permissions=117760&integration_type=0&scope=bot)**
 
-**[Add it to your account](https://discord.com/oauth2/authorize?client_id=1554720194046197840&integration_type=1&scope=applications.commands)** to use `/manual-input`, `/spherebonus`, `/colorblindmode`, `/global-stats`, `/my-stats` and **Solve sphere board** in any server or DM, even ones the bot isn't in. `/autoread` still needs the bot in the server, because it has to read Mudae's messages.
+**[Add it to your account](https://discord.com/oauth2/authorize?client_id=1554720194046197840&integration_type=1&scope=applications.commands)** to use `/manual-input`, `/spherebonus`, `/colorblindmode`, `/global-stats`, `/my-stats`, `/delete-stats` and **Solve sphere board** in any server or DM, even ones the bot isn't in. `/autoread` still needs the bot in the server, because it has to read Mudae's messages.
 
 **Contents:** [Status](#status) · [Using the bot](#using-the-bot) · [`$oc`](#oc) ·
-[`$oq`](#oq) · [Stats and privacy](#stats-and-privacy) ·
+[`$oq`](#oq) · [`$oh`](#oh) · [Stats and privacy](#stats-and-privacy) ·
 [Running your own copy](#running-your-own-copy) · [Development](#development) ·
-[License](#license)
+[License](#license) · [Privacy policy](PRIVACY.md)
 
 ## Status
 
@@ -19,7 +19,8 @@ Mudae board, or turn on `/autoread` and it follows your game as you click. `$oq`
 solved through `/manual-input` or `/autoread`; right-click doesn't read `$oq` boards.
 Both solvers' expected values are verified by simulation. Games read by `/autoread`
 feed `/global-stats` and `/my-stats`, which check the solver against real games.
-`$oh` and `$ot` are not planned.
+`$oh` is new and uses a simple rule rather than a search, through `/manual-input` or
+`/autoread`; its games don't count toward the stats yet. `$ot` is not planned.
 
 ## Using the bot
 
@@ -31,8 +32,12 @@ as you play. If you clicked the cell the solver suggested, type just its color, 
 - `$oc`: `/manual-input game: $oc board: D4R B2T`, with colors R O Y G T B.
 - `$oq`: `/manual-input game: $oq board: C3B B4G A1T`, with B T G Y O for 0 to 4
   purples around a tile, P for a purple, and R for the red once it appears.
+- `$oh`: `/manual-input game: $oh board: A3B B2T* A1B`, with B T G Y O R, W for
+  rainbow, D dark, L light, P purple and C for the free `$oc` game. A `*` means you
+  clicked that tile. With **Add spheres**, `T A1 B` means "the suggested tile was
+  teal, and A1 now shows blue".
 
-**`/autoread`:** turns auto-read on or off. With it on, play `$oc` or `$oq` as
+**`/autoread`:** turns auto-read on or off. With it on, play `$oc`, `$oq` or `$oh` as
 usual: the bot reads Mudae's board buttons directly (no image recognition), replies
 with the best click, and updates its reply every time you click. You can also
 right-click any Mudae `$oc` board → Apps → **Solve sphere board**. Two limits: typed
@@ -41,7 +46,8 @@ servers the bot can lose track of a game, because discord.py only reports edits 
 messages still in its cache of recent ones.
 
 **`/global-stats` and `/my-stats`:** what the solver has done in real games, for
-everyone or just you. See [Stats and privacy](#stats-and-privacy).
+everyone or just you. `/delete-stats` deletes yours after you confirm. See
+[Stats and privacy](#stats-and-privacy).
 
 **`$oq` details:** with `/manual-input`, after you click the red, add it again (like
 `D4 R`) so the bot counts that click. Hidden tiles show their chance of being purple,
@@ -316,7 +322,66 @@ It uses test payouts that give every color a different value.
 
 All pass (limit 3 standard errors).
 
+## `$oh`
+
+Solved by `/manual-input game: $oh` or `/autoread`. The rule is
+`src/solver/oh_rule.py`; its numbers are in `src/solver/modes/oh.py`.
+
+### Rules as modeled
+
+From Mudae's `$oh` rules text and Flow's dumps of two games (`data/mudae/oh_*.txt`):
+
+- 5×5 board, all covered but one tile. You get 5 paid clicks; purple is free.
+- Clicking a covered tile uncovers it and pays its sphere. Clicking a blue uncovers 3
+  more tiles, a teal 1. Uncovered spheres stay until you click them.
+- Half of all boards hide one free `$oc` game under a covered tile, which blue and
+  teal never uncover (Flow). At the end it's the one tile left covered.
+
+What's under a covered tile, and what dark and light pay on average, come from
+colblitz's `$oh` page as copied by Flow. They haven't been checked against our own
+data. Those rates add up to 98%: the missing 2% is the `$oc` game (50% over 25
+tiles).
+
+| Sphere | Spheres | Chance under a covered tile |
+| --- | --- | --- |
+| Rainbow | 500 | 0.04% |
+| Red | 150 | 0.22% |
+| Dark | about 104 (turns into a random sphere) | 1.46% |
+| Orange | 90 | 0.97% |
+| Light | about 76 (breaks into several) | 2.96% |
+| Yellow | 55 | 2.57% |
+| Green | 35 | 7.88% |
+| Teal | 20 | 23.48% |
+| Blue | 10 | 54.49% |
+| Purple | 5, free | 3.93% |
+
+### How it picks a click
+
+Spheres don't disappear, so the real choice each click is between a covered tile
+and the weakest sphere you'd still have clicks for.
+
+1. A visible purple is free: click it.
+2. With c paid clicks left, you'll end up taking the c best visible spheres. If a
+   covered tile is worth more on average than the c-th best of them, click a covered
+   tile.
+3. Otherwise click a visible sphere: dark first (it's random, so learning what it
+   becomes early costs nothing), then the most valuable.
+
+A covered tile is worth the average sphere (20.1 at base values), mixed with the
+`$oc` game while it hasn't been found: each covered tile gets a 50% ÷ (covered tiles
+left) chance of it, worth 344.7 spheres, the `$oc` solver's expected score. On a
+fresh board that's 26.8 spheres per covered tile.
+
+This is a rule, not a search, and it hasn't been checked by simulation: that needs a
+model of how Mudae lays out `$oh` boards, which we don't have. It ignores what blue
+and teal uncover, and it doesn't lower the `$oc` game's chance as covered clicks come
+up empty. With a sphere bonus, dark and light use their average with the bonus
+applied, and the `$oc` game's value adds the flat bonus to each of its 5 clicks
+before scaling.
+
 ## Stats and privacy
+
+The full [privacy policy](PRIVACY.md) covers everything the bot reads and stores.
 
 `/global-stats` (public reply) and `/my-stats` (only you see it) show:
 
@@ -348,7 +413,8 @@ of each game.
 - `stats.json` holds the global totals, with no user, server, channel or message IDs.
 - `my_stats.json` holds each player's totals under their Discord user ID, the same
   way `settings.json` stores `/autoread`, `/colorblindmode` and `/spherebonus`
-  choices. `/my-stats delete: True` removes yours; the global totals keep the games.
+  choices. `/delete-stats` removes yours after you confirm; the global totals keep
+  the games.
 
 Each file is written atomically after every change, so a crash can't leave one
 half-written, and none of them is ever committed to this repository. The two stats
@@ -367,9 +433,15 @@ on every board message, as it does here.
    `source .venv/bin/activate` elsewhere), and `pip install -r requirements.txt`.
 3. Copy `.env.example` to `.env` and fill in `DISCORD_TOKEN` (and, for development,
    `DISCORD_GUILD_ID` so commands appear in your test server immediately).
-4. `python -m src.bot.main`
+4. `python -m src.bot.main`, or `python run.py` on hosts that can only start a file.
 
 Auto mode needs **Message Content Intent** enabled on your bot's developer page.
+
+The console logs every solve that took over a second or built a new solver (how
+long it waited in the queue, how long it computed, and the payout table), plus a
+heartbeat line every 5 minutes with the solver caches and memory use. The heartbeat
+also re-solves the fresh `$oc` board for every cached payout table, rebuilding the
+base one if it was pushed out.
 
 ## Development
 
@@ -384,6 +456,10 @@ python -m sim.verify_readme_numbers
 ruff format .
 ruff check .
 ```
+
+`python scripts/bot_counts.py` prints how many servers the bot is in, their member
+count and the account installs. It only makes a few web requests, so it can run while
+the bot is online.
 
 The README's numbers and images are generated, not typed in:
 
