@@ -26,7 +26,10 @@ GLOBAL_FOOTER = (
     "Only games from players with /autoread on, and only when the clicks matched "
     "Mudae's rewards message. Totals only: no user, server or message IDs are stored."
 )
-MY_FOOTER = "Saved under your Discord ID. /my-stats delete: True removes them."
+MY_FOOTER = "Saved under your Discord ID. /delete-stats removes them."
+DELETE_PROMPT = (
+    "Delete your saved stats? This can't be undone. The global totals keep your games."
+)
 
 
 def _games(n: int) -> str:
@@ -154,6 +157,30 @@ def delete_my_stats(stats: StatsStore, user_id: int) -> str:
     return "You have no saved stats."
 
 
+class DeleteStatsView(discord.ui.View):
+    def __init__(self, stats: StatsStore) -> None:
+        super().__init__(timeout=60)
+        self.stats = stats
+
+    @discord.ui.button(label="Delete my stats", style=discord.ButtonStyle.danger)
+    async def confirm(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        self.stop()
+        await interaction.response.edit_message(
+            content=delete_my_stats(self.stats, interaction.user.id), view=None
+        )
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        self.stop()
+        await interaction.response.edit_message(
+            content="Cancelled. Your stats are still saved.", view=None
+        )
+
+
 def register_stats(tree: app_commands.CommandTree, stats: StatsStore) -> None:
     @tree.command(
         name="global-stats",
@@ -168,17 +195,18 @@ def register_stats(tree: app_commands.CommandTree, stats: StatsStore) -> None:
     @tree.command(name="my-stats", description="Your stats from auto-read games")
     @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(delete="Delete your saved stats. This can't be undone.")
-    async def my_stats(interaction: discord.Interaction, delete: bool = False) -> None:
-        user_id = interaction.user.id
-        if delete:
-            await interaction.response.send_message(
-                delete_my_stats(stats, user_id), ephemeral=True
-            )
-            return
-        totals = stats.players.get(user_id, Totals())
+    async def my_stats(interaction: discord.Interaction) -> None:
+        totals = stats.players.get(interaction.user.id, Totals())
         await interaction.response.send_message(
             embed=stats_embed(totals, "Your stats", MY_FOOTER),
             view=credit_view(),
             ephemeral=True,
+        )
+
+    @tree.command(name="delete-stats", description="Delete your saved stats")
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    async def delete_stats(interaction: discord.Interaction) -> None:
+        await interaction.response.send_message(
+            DELETE_PROMPT, view=DeleteStatsView(stats), ephemeral=True
         )

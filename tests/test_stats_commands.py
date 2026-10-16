@@ -6,6 +6,7 @@ from discord import app_commands
 from test_totals import PLAYER, oc, oq
 
 from src.bot.stats_commands import (
+    DELETE_PROMPT,
     RING_EVERY_BOARD,
     RING_SOLVER,
     red_grid,
@@ -73,11 +74,24 @@ class _Response:
     async def send_message(self, content=None, **kwargs):
         self.sent.append((content, kwargs))
 
+    async def edit_message(self, **kwargs):
+        self.sent.append((kwargs["content"], kwargs))
+
+
+def _interaction(user_id):
+    user = type("User", (), {"id": user_id})()
+    return type("I", (), {"user": user, "response": _Response()})()
+
 
 def _run(command, user_id, **options):
-    user = type("User", (), {"id": user_id})()
-    interaction = type("I", (), {"user": user, "response": _Response()})()
+    interaction = _interaction(user_id)
     asyncio.run(command.callback(interaction, **options))
+    return interaction.response.sent
+
+
+def _press(button, user_id):
+    interaction = _interaction(user_id)
+    asyncio.run(button.callback(interaction))
     return interaction.response.sent
 
 
@@ -109,18 +123,42 @@ def test_my_stats_is_private_and_only_mine(tree_and_store):
     assert "No games yet" in other["embed"].description
 
 
-def test_my_stats_delete_removes_only_mine(tree_and_store):
+def test_my_stats_has_no_delete_option(tree_and_store):
+    tree, _ = tree_and_store
+    assert tree.get_command("my-stats").to_dict(tree)["options"] == []
+
+
+def test_delete_stats_asks_first_and_deletes_nothing_yet(tree_and_store):
     tree, store = tree_and_store
-    ((text, sent),) = _run(tree.get_command("my-stats"), PLAYER, delete=True)
-    assert text == "Deleted your saved stats."
+    ((text, sent),) = _run(tree.get_command("delete-stats"), PLAYER)
+    assert text == DELETE_PROMPT
     assert sent["ephemeral"] is True
+    assert PLAYER in store.players
+
+
+def test_confirm_deletes_only_mine(tree_and_store):
+    tree, store = tree_and_store
+    ((_, sent),) = _run(tree.get_command("delete-stats"), PLAYER)
+    ((text, edit),) = _press(sent["view"].confirm, PLAYER)
+    assert text == "Deleted your saved stats."
+    assert edit["view"] is None
     assert PLAYER not in store.players
+    assert 7 in store.players
     assert store.all.oc.games == 1
-    ((text, _),) = _run(tree.get_command("my-stats"), PLAYER, delete=True)
+    ((text, _),) = _press(sent["view"].confirm, PLAYER)
     assert text == "You have no saved stats."
 
 
-@pytest.mark.parametrize("name", ["global-stats", "my-stats"])
+def test_cancel_keeps_my_stats(tree_and_store):
+    tree, store = tree_and_store
+    ((_, sent),) = _run(tree.get_command("delete-stats"), PLAYER)
+    ((text, edit),) = _press(sent["view"].cancel, PLAYER)
+    assert text == "Cancelled. Your stats are still saved."
+    assert edit["view"] is None
+    assert PLAYER in store.players
+
+
+@pytest.mark.parametrize("name", ["global-stats", "my-stats", "delete-stats"])
 def test_stats_commands_can_be_installed_to_a_user_account(tree_and_store, name):
     tree, _ = tree_and_store
     payload = tree.get_command(name).to_dict(tree)
