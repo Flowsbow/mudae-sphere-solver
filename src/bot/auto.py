@@ -8,14 +8,18 @@ import discord
 from src.bot.commands import BoardView, OcService, solve_and_draw
 from src.bot.mudae_reader import (
     MUDAE_ID,
+    OH_RULES,
     OQ_RULES,
     MudaeBoard,
     NotAnOcBoardError,
+    NotAnOhBoardError,
     NotAnOqBoardError,
     is_sphere_board,
     read_oc_board,
+    read_oh_board,
     read_oq_board,
 )
+from src.bot.oh import OhBoardView, OhService
 from src.bot.oq import OqBoardView, OqService
 from src.bot.rewards import (
     EMOJI_LABEL,
@@ -30,9 +34,9 @@ from src.solver.ev import InconsistentBoardError
 from src.solver.modes.oq import PURPLE, RED
 from src.solver.stats import game_stats
 
-# "$oc" or "$oq" with Mudae's default "$" prefix, optionally followed by an
+# "$oc", "$oq" or "$oh" with Mudae's default "$" prefix, optionally followed by an
 # argument ("$oc 2" in Flow's 2026-09-26 screenshot). Servers can change the prefix.
-GAME_COMMAND = re.compile(r"^\$o([cq])(\s|$)", re.IGNORECASE)
+GAME_COMMAND = re.compile(r"^\$o([cqh])(\s|$)", re.IGNORECASE)
 # Chosen 2026-09-29: a Mudae board this soon after someone types $oc is theirs.
 PENDING_SECONDS = 30
 # Chosen 2026-09-29: forget games this old; a game lasts 2 minutes.
@@ -43,7 +47,7 @@ Result = OcResult | OqResult
 
 @dataclass
 class AutoGame:
-    view: BoardView | OqBoardView
+    view: BoardView | OqBoardView | OhBoardView
     reply: discord.Message
     started: float
     channel_id: int
@@ -89,11 +93,13 @@ class AutoTracker:
         service: OcService,
         stats: StatsStore | None = None,
         oq: OqService | None = None,
+        oh: OhService | None = None,
     ) -> None:
         self.service = service
         self.oq = oq if oq is not None else OqService(service)
+        self.oh = oh if oh is not None else OhService(service)
         self.stats = stats if stats is not None else StatsStore()
-        # Channel -> (player, when they typed it, "oc" or "oq").
+        # Channel -> (player, when they typed it, "oc", "oq" or "oh").
         self.pending: dict[int, tuple[int, float, str]] = {}
         self.games: dict[int, AutoGame] = {}
         self.log = ChannelLog()
@@ -136,6 +142,8 @@ class AutoTracker:
             self.log.add_board(message.channel.id, message.id)
         if OQ_RULES in message.content:
             await self._start_oq(message)
+        elif OH_RULES in message.content:
+            await self._start_oh(message)
         else:
             await self._start_oc(message)
 
@@ -179,10 +187,32 @@ class AutoTracker:
             return
         await self._reply(message, view, embed, file)
 
+    async def _start_oh(self, message: discord.Message) -> None:
+        try:
+            board = read_oh_board(message)
+        except NotAnOhBoardError:
+            return
+        if board.finished:
+            return
+        owner = self.owner_of(message, "oh")
+        if owner is None:
+            return
+        server = message.guild.id if message.guild else None
+        view = OhBoardView(
+            self.oh,
+            board.board,
+            owner,
+            self.oh.payouts_for(owner, server),
+            self.oh.oc_value_for(owner, server),
+            manual=False,
+        )
+        embed, file = await view.update(board.board)
+        await self._reply(message, view, embed, file)
+
     async def _reply(
         self,
         message: discord.Message,
-        view: BoardView | OqBoardView,
+        view: BoardView | OqBoardView | OhBoardView,
         embed: discord.Embed,
         file: discord.File,
     ) -> None:
@@ -205,6 +235,8 @@ class AutoTracker:
             return
         if isinstance(game.view, OqBoardView):
             await self._oq_edit(after, game)
+        elif isinstance(game.view, OhBoardView):
+            await self._oh_edit(after, game)
         else:
             await self._oc_edit(after, game)
 
@@ -276,6 +308,24 @@ class AutoTracker:
             if board.finished:
                 self.games.pop(after.id, None)
                 self._await_rewards(after.id, game, oq_result(view))
+            game.reply = await game.reply.edit(
+                embed=embed, attachments=[file], view=view
+            )
+
+    async def _oh_edit(self, after: discord.Message, game: AutoGame) -> None:
+        try:
+            board = read_oh_board(after)
+        except NotAnOhBoardError:
+            return
+        view = game.view
+        async with game.lock:
+            if self.games.get(after.id) is not game:
+                return
+            if board.board == view.board and not board.finished:
+                return
+            embed, file = await view.update(board.board, final=board.finished)
+            if board.finished:
+                self.games.pop(after.id, None)
             game.reply = await game.reply.edit(
                 embed=embed, attachments=[file], view=view
             )

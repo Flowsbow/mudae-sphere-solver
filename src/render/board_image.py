@@ -14,6 +14,7 @@ from src.solver.board import (
 )
 from src.solver.ev import Analysis
 from src.solver.modes.oq import PURPLE, RED, RED_SHOWN
+from src.solver.oh_rule import OhAdvice, OhBoard
 from src.solver.oq_ev import OqAnalysis
 
 # Look chosen by Flow from rendered mockups, 2026-09-28 ("design B").
@@ -42,6 +43,21 @@ PURPLE_GEM = (150, 85, 200)
 # $oq's rainbow sphere: stripes in these colors under a white star, chosen
 # 2026-10-05.
 RAINBOW = [GEM[c] for c in reversed(Color)] + [PURPLE_GEM]
+# $oh: dark and light spheres and the $oc prize; display colors chosen 2026-10-08.
+OH_COLOR = {
+    "B": GEM[Color.BLUE],
+    "T": GEM[Color.TEAL],
+    "G": GEM[Color.GREEN],
+    "Y": GEM[Color.YELLOW],
+    "O": GEM[Color.ORANGE],
+    "R": GEM[Color.RED],
+    "P": PURPLE_GEM,
+    "D": (75, 65, 105),
+    "L": (165, 165, 180),
+    "C": GOLD_MID,
+}
+# How far clicked $oh tiles fade toward the background; chosen 2026-10-08.
+CLICKED_FADE = 0.6
 
 
 def click_values(
@@ -263,6 +279,40 @@ def render_oq(
                 font=_font(17),
                 anchor="mm",
             )
+    return _png(img, size)
+
+
+def render_oh(board: OhBoard, advice: OhAdvice | None = None) -> bytes:
+    """$oh board: spheres as lettered blocks, faded once clicked; covered tiles
+    show their average value."""
+    img, draw, size = _canvas()
+    for cell, letter in enumerate(board.cells):
+        best = advice is not None and cell == advice.best
+        if letter == "W" and cell not in board.clicked:
+            _rainbow_block(img, cell, outlined=best)
+            draw = ImageDraw.Draw(img)
+        elif letter is not None:
+            color = RAINBOW[0] if letter == "W" else OH_COLOR[letter]
+            if cell in board.clicked:
+                color = _mix(color, BACKGROUND, CLICKED_FADE)
+            _block(draw, cell, color, letter, outlined=best)
+        else:
+            x0, y0, x1, y1 = _tile_box(cell)
+            draw.rounded_rectangle(
+                [x0, y0, x1, y1],
+                radius=_px(8),
+                fill=TILE_COLOR,
+                outline=BEST_OUTLINE if best else None,
+                width=_px(3),
+            )
+            if advice is not None and advice.covered_value is not None:
+                draw.text(
+                    ((x0 + x1) // 2, (y0 + y1) // 2),
+                    f"+{advice.covered_value:.0f}",
+                    fill=TEXT,
+                    font=_font(17),
+                    anchor="mm",
+                )
     return _png(img, size)
 
 

@@ -7,6 +7,7 @@ from discord import app_commands
 
 from src.bot.mudae_reader import NotAnOcBoardError, read_oc_board
 from src.bot.settings import PlayerSettings, load_settings, save_settings
+from src.bot.timing import payout_label, timed_solve
 from src.render.board_image import render, render_final
 from src.solver.board import (
     BoardInputError,
@@ -55,8 +56,12 @@ class OcService:
         bonus = self.bonus_for.get((user_id, server_id))
         return BASE_PAYOUT if bonus is None else with_bonus(BASE_PAYOUT, *bonus)
 
+    @staticmethod
+    def _key(payouts: Payouts) -> tuple[int, ...]:
+        return tuple(payouts[color] for color in Color)
+
     def _solver_for(self, payouts: Payouts) -> Solver:
-        key = tuple(payouts[color] for color in Color)
+        key = self._key(payouts)
         solver = self.solvers.pop(key, None)
         if solver is None:
             solver = Solver(LAYOUTS, prior(), payouts, CLICKS, SYMMETRIES)
@@ -68,7 +73,9 @@ class OcService:
     async def analyze(
         self, state: BoardState, payouts: Payouts = BASE_PAYOUT
     ) -> Analysis:
-        async with self.lock:
+        new = self._key(payouts) not in self.solvers
+        label = payout_label(payouts, Color.RED)
+        async with timed_solve("$oc", self.lock, new, label, len(self.solvers)):
             solver = self._solver_for(payouts)
             return await asyncio.to_thread(solver.analyze, state)
 
@@ -340,10 +347,11 @@ def set_auto(service: OcService, user_id: int, on: bool) -> str:
     service.save_settings()
     if on:
         return (
-            "Auto-read on. Type `$oc` or `$oq` and I'll solve Mudae's board as you "
-            "play, in servers I've joined. Your finished games count toward "
+            "Auto-read on. Type `$oc`, `$oq` or `$oh` and I'll solve Mudae's board as "
+            "you play, in servers I've joined. Your finished `$oc` and `$oq` games "
+            "count toward "
             "`/global-stats` and `/my-stats` (saved under your Discord ID; "
-            "`/my-stats delete: True` removes them). Run `/autoread` again to turn "
+            "`/delete-stats` removes them). Run `/autoread` again to turn "
             "it off."
         )
     return "Auto-read off. Run `/autoread` again to turn it back on."

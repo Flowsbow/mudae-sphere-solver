@@ -44,7 +44,11 @@ def test_manual_input_asks_for_the_game_then_an_optional_board(service):
     assert tree.get_command("oc") is None and tree.get_command("oq") is None
     game, board = tree.get_command("manual-input").parameters
     assert game.name == "game" and game.required
-    assert [(c.name, c.value) for c in game.choices] == [("$oc", "oc"), ("$oq", "oq")]
+    assert [(c.name, c.value) for c in game.choices] == [
+        ("$oc", "oc"),
+        ("$oq", "oq"),
+        ("$oh", "oh"),
+    ]
     assert board.name == "board" and not board.required
 
 

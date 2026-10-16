@@ -11,6 +11,7 @@ from src.bot.commands import (
     IMAGE_NAME,
     OcService,
 )
+from src.bot.timing import payout_label, timed_solve
 from src.render.board_image import percent, purples_all_known, render_oq
 from src.solver.board import N_CELLS, BoardInputError, cell_name
 from src.solver.ev import InconsistentBoardError
@@ -56,8 +57,17 @@ class OqService:
         bonus = self.settings.bonus_for.get((user_id, server_id))
         return base if bonus is None else with_bonus(base, *bonus)
 
+    @staticmethod
+    def _key(payouts: Payouts) -> tuple[tuple[int, int], ...]:
+        return tuple(sorted(payouts.items()))
+
+    def _timed(self, name: str, payouts: Payouts):
+        new = self._key(payouts) not in self.solvers
+        label = payout_label(payouts, RED)
+        return timed_solve(name, self.lock, new, label, len(self.solvers))
+
     def _solver_for(self, payouts: Payouts) -> OqSolver:
-        key = tuple(sorted(payouts.items()))
+        key = self._key(payouts)
         solver = self.solvers.pop(key, None)
         if solver is None:
             solver = OqSolver(LAYOUTS, payouts, symmetries=SYMMETRIES)
@@ -69,7 +79,7 @@ class OqService:
     async def analyze(
         self, codes: tuple[int, ...], payouts: Payouts = BASE_PAYOUT
     ) -> OqAnalysis:
-        async with self.lock:
+        async with self._timed("$oq", payouts):
             solver = self._solver_for(payouts)
             return await asyncio.to_thread(solver.analyze, codes)
 
@@ -81,7 +91,7 @@ class OqService:
     ) -> tuple[float, int]:
         """Best with hindsight on the real board when it's known; otherwise the
         average over the boards that still fit, and how many there are."""
-        async with self.lock:
+        async with self._timed("$oq hindsight", payouts):
             solver = self._solver_for(payouts)
             if layout is not None:
                 try:
