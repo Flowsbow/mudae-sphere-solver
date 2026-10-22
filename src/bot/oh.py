@@ -224,14 +224,15 @@ class AddOhSpheresModal(discord.ui.Modal, title="Add spheres"):
 
 async def send_oh_board(
     interaction: discord.Interaction, service: OhService, text: str
-) -> None:
+) -> bool:
+    """Whether a board with advice was sent (False when the board was rejected)."""
     try:
         board = parse_board(text)
     except BoardInputError as err:
         await interaction.response.send_message(
             f"Couldn't read that board: {err} Spheres: {LETTERS}.", ephemeral=True
         )
-        return
+        return False
     server = interaction.guild_id
     user = interaction.user.id
     view = OhBoardView(
@@ -244,3 +245,4 @@ async def send_oh_board(
     embed, file = await view.update(board)
     await interaction.response.send_message(embed=embed, file=file, view=view)
     view.message = await interaction.original_response()
+    return True

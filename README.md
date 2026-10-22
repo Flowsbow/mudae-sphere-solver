@@ -28,7 +28,8 @@ not planned.
 **`/manual-input`:** pick the game, then type the board. Cells are a row letter and
 column number. Leave out `board` for a new game. **Add a sphere** updates the board
 as you play. If you clicked the cell the solver suggested, type just its color, like
-`g`.
+`g`. Each person can use `/manual-input` once every 30 seconds (a board it can't
+read doesn't count); **Add a sphere** isn't limited.
 
 - `$oc`: `/manual-input game: $oc board: D4R B2T`, with colors R O Y G T B.
 - `$oq`: `/manual-input game: $oq board: C3B B4G A1T`, with B T G Y O for 0 to 4

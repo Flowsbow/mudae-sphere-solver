@@ -323,7 +323,8 @@ class AddSphereModal(discord.ui.Modal, title="Add a sphere"):
 
 async def send_board(
     interaction: discord.Interaction, service: OcService, state: BoardState
-) -> None:
+) -> bool:
+    """Whether a solved board was sent (False when the board was rejected)."""
     await interaction.response.defer(thinking=True)
     user_id = interaction.user.id
     letters = service.letters_for.get(user_id, False)
@@ -332,11 +333,12 @@ async def send_board(
         embed, file, analysis = await solve_and_draw(service, state, letters, payouts)
     except InconsistentBoardError as err:
         await interaction.followup.send(f"That board can't happen in $oc: {err}")
-        return
+        return False
     view = BoardView(service, state, user_id, analysis, payouts=payouts)
     view.message = await interaction.followup.send(
         embed=embed, file=file, view=view, wait=True
     )
+    return True
 
 
 def set_auto(service: OcService, user_id: int, on: bool) -> str:

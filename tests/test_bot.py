@@ -15,7 +15,7 @@ from src.bot.commands import (
     build_reply,
     register,
 )
-from src.bot.manual import register_manual
+from src.bot.manual import GAMES, Cooldown, register_manual
 from src.bot.oq import OqService
 from src.render.board_image import render
 from src.solver.board import BoardInputError, BoardState, Color
@@ -390,3 +390,46 @@ def test_a_click_as_good_as_the_solvers_pick_counts_as_followed(service):
     embed, _ = build_stats_reply(stats, view.state.revealed, frozenset({other}), False)
     fields = {f.name: f.value for f in embed.fields}
     assert "(as good as the solver's pick)" in fields["Your clicks"]
+
+
+def test_manual_input_cooldown_is_per_user():
+    now = [0.0]
+    cooldown = Cooldown(60, clock=lambda: now[0])
+    assert cooldown.wait_for(1) == 0
+    now[0] = 45
+    assert cooldown.wait_for(1) == 15
+    assert cooldown.wait_for(2) == 0
+    now[0] = 60
+    assert cooldown.wait_for(1) == 0
+    assert set(cooldown.next_use) == {1, 2}
+    now[0] = 106
+    cooldown.wait_for(3)
+    assert set(cooldown.next_use) == {1, 3}
+    cooldown.cancel(3)
+    assert cooldown.wait_for(3) == 0
+
+
+def test_a_rejected_board_doesnt_start_the_cooldown(service):
+    cooldown = Cooldown(30)
+    tree = app_commands.CommandTree(discord.Client(intents=discord.Intents.default()))
+    register_manual(tree, service, OqService(service), cooldown=cooldown)
+    command = tree.get_command("manual-input")
+    for game in GAMES:
+        typo = _FakeCommandInteraction(9)
+        asyncio.run(command.callback(typo, game=game, board="D4X"))
+        ((text, ephemeral),) = typo.response.sent
+        assert text.startswith("Couldn't read that board") and ephemeral
+        assert 9 not in cooldown.next_use
+
+
+def test_manual_input_too_soon_is_told_privately_and_not_solved(service):
+    cooldown = Cooldown(30)
+    tree = app_commands.CommandTree(discord.Client(intents=discord.Intents.default()))
+    register_manual(tree, service, OqService(service), cooldown=cooldown)
+    cooldown.wait_for(9)
+    interaction = _FakeCommandInteraction(9)
+    command = tree.get_command("manual-input")
+    asyncio.run(command.callback(interaction, game=GAMES[0], board="D4R"))
+    ((text, ephemeral),) = interaction.response.sent
+    assert text.startswith("You can use /manual-input again <t:") and ephemeral
+    assert interaction.followup.sent == []

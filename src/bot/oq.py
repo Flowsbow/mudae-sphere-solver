@@ -340,14 +340,15 @@ class AddOqSphereModal(discord.ui.Modal, title="Add a sphere"):
 
 async def send_oq_board(
     interaction: discord.Interaction, service: OqService, board: str
-) -> None:
+) -> bool:
+    """Whether a solved board was sent (False when the board was rejected)."""
     try:
         codes = parse_board(board)
     except BoardInputError as err:
         await interaction.response.send_message(
             f"Couldn't read that board: {err}", ephemeral=True
         )
-        return
+        return False
     await interaction.response.defer(thinking=True)
     user_id = interaction.user.id
     payouts = service.payouts_for(user_id, interaction.guild_id)
@@ -358,7 +359,8 @@ async def send_oq_board(
         embed, file = await view.update(codes)
     except InconsistentBoardError as err:
         await interaction.followup.send(f"That board can't happen in $oq: {err}")
-        return
+        return False
     view.message = await interaction.followup.send(
         embed=embed, file=file, view=view, wait=True
     )
+    return True
