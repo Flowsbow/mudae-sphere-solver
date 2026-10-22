@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 
 from src.bot.auto import AutoTracker
 from src.bot.commands import OcService, register
-from src.bot.heartbeat import run_heartbeat
 from src.bot.inspector import register_inspector
 from src.bot.manual import register_manual
 from src.bot.oh import OhService
@@ -19,20 +18,23 @@ from src.bot.totals import StatsStore
 
 class SolverBot(discord.Client):
     def __init__(
-        self, guild_id: int | None, settings_path: Path, stats: StatsStore
+        self,
+        guild_id: int | None,
+        settings_path: Path,
+        stats: StatsStore,
+        solver_path: Path | None = None,
     ) -> None:
         intents = discord.Intents.default()
         intents.message_content = True
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
-        self.service = OcService(settings_path)
+        self.service = OcService(settings_path, solver_path)
         self.oq = OqService(self.service)
         self.oh = OhService(self.service)
         self.stats = stats
         self.auto = AutoTracker(self.service, stats, self.oq, self.oh)
         self.guild_id = guild_id
         self.warm_up_task: asyncio.Task | None = None
-        self.heartbeat_task: asyncio.Task | None = None
 
     async def setup_hook(self) -> None:
         register(self.tree, self.service)
@@ -46,7 +48,6 @@ class SolverBot(discord.Client):
         else:
             await self.tree.sync()
         self.warm_up_task = asyncio.create_task(self.service.warm_up())
-        self.heartbeat_task = asyncio.create_task(run_heartbeat(self.service, self.oq))
 
     async def on_message(self, message: discord.Message) -> None:
         await self.auto.on_message(message)
@@ -68,9 +69,12 @@ def main() -> None:
         Path(os.environ.get("STATS_FILE", "stats.json")),
         Path(os.environ.get("MY_STATS_FILE", "my_stats.json")),
     )
-    bot = SolverBot(int(guild_id) if guild_id else None, settings_path, stats)
+    solver_path = Path(os.environ.get("OC_SOLVER_FILE", "oc_solver.npz"))
+    bot = SolverBot(
+        int(guild_id) if guild_id else None, settings_path, stats, solver_path
+    )
     # root_logger: without it discord.py prints only its own log lines, not the
-    # solve timings and heartbeat from src/bot/timing.py and heartbeat.py.
+    # solve timings and slow-reply lines from src/bot/timing.py and auto.py.
     bot.run(token, root_logger=True)
 
 

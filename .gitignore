@@ -9,3 +9,5 @@ stats.json
 stats.json.tmp
 my_stats.json
 my_stats.json.tmp
+oc_solver.npz
+oc_solver.npz.partial

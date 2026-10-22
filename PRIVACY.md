@@ -3,7 +3,7 @@
 This covers the Discord bot run from this repository (Sphere Solver). If you run your
 own copy, you're responsible for your copy's data.
 
-Last updated: 2026-10-08. Changes are made in this file, so its commit history shows
+Last updated: 2026-10-22. Changes are made in this file, so its commit history shows
 every earlier version.
 
 ## What the bot reads
@@ -33,6 +33,9 @@ Three files on the bot's server:
 
 Stats are running totals (counts, sums and sums of squares), never a record of
 individual games, and only games read by `/autoread` count.
+
+It also saves `oc_solver.npz`, the `$oc` solver's results for every board, so a
+restart doesn't have to work them out again. It holds no user data.
 
 ## What the bot doesn't do
 

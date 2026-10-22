@@ -7,7 +7,6 @@ from discord import app_commands
 from test_auto import PLAYER, _board_from, _Message, _play
 from test_bot import _FakeCommandInteraction
 
-import src.bot.commands as commands
 from src.bot.commands import (
     MAX_BONUS,
     BoardView,
@@ -122,18 +121,6 @@ def test_analysis_uses_the_players_values():
     assert analysis.value == pytest.approx(best_single_click)
     base = asyncio.run(service.analyze(state))
     assert analysis.value > base.value + 1
-
-
-def test_the_solver_cache_drops_the_least_recently_used(monkeypatch):
-    monkeypatch.setattr(commands, "MAX_SOLVERS", 2)
-    service = OcService()
-    state = BoardState.parse(ONE_CLICK_LEFT)
-    a, b, c = (with_bonus(BASE_PAYOUT, flat, 0) for flat in (1, 2, 3))
-    for table in (a, b, a, c):
-        asyncio.run(service.analyze(state, table))
-    assert list(service.solvers) == [
-        tuple(table[color] for color in Color) for table in (a, c)
-    ]
 
 
 def test_game_over_screen_uses_the_players_values():

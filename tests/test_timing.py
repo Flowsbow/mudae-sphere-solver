@@ -1,15 +1,9 @@
 import asyncio
 import logging
 
-import pytest
-
-import src.bot.heartbeat as heartbeat_module
 import src.bot.timing as timing
-from src.bot.commands import OcService
-from src.bot.heartbeat import beat, run_heartbeat
-from src.bot.oq import OqService
 from src.bot.timing import payout_label, timed_solve
-from src.solver.board import BoardState, Color
+from src.solver.board import Color
 from src.solver.modes.oc import BASE_PAYOUT
 
 
@@ -54,64 +48,6 @@ def test_time_waiting_for_the_queue_is_counted(caplog, monkeypatch):
 
 def test_payout_label_names_no_ids():
     assert payout_label(BASE_PAYOUT, Color.RED) == "red pays 150"
-
-
-@pytest.fixture(scope="module")
-def warm():
-    service = OcService()
-    return service, asyncio.run(beat(service, OqService(service)))
-
-
-def test_heartbeat_rebuilds_a_missing_base_solver(warm):
-    service, line = warm
-    assert "1 $oc solvers touched" in line
-    assert "(rebuilt the base one)" in line
-    assert OcService._key(BASE_PAYOUT) in service.solvers
-
-
-def test_heartbeat_touch_of_a_cached_solver_is_fast(warm):
-    service, _ = warm
-    line = asyncio.run(beat(service, OqService(service)))
-    assert "rebuilt" not in line
-    seconds = float(line.split(" touched in ")[1].split("s")[0])
-    assert seconds < 1.0
-    assert "0 $oq solvers cached, 0 different sphere bonuses saved" in line
-
-
-def test_heartbeat_counts_distinct_saved_bonuses(warm):
-    service, _ = warm
-    service.bonus_for = {(1, None): (6, 25), (2, 9): (6, 25), (3, 9): (0, 10)}
-    try:
-        line = asyncio.run(beat(service, OqService(service)))
-    finally:
-        service.bonus_for = {}
-    assert "2 different sphere bonuses saved" in line
-
-
-def test_cached_tables_round_trip_to_payouts(warm):
-    service, _ = warm
-    (key,) = service.solvers
-    assert dict(zip(Color, key, strict=True)) == BASE_PAYOUT
-    assert service._key(BASE_PAYOUT) == key
-    assert asyncio.run(service.analyze(BoardState())).best is not None
-
-
-def test_a_failed_heartbeat_is_logged_and_the_next_one_still_runs(caplog, monkeypatch):
-    calls = []
-
-    async def flaky(oc, oq):
-        calls.append(1)
-        if len(calls) == 1:
-            raise RuntimeError("boom")
-        if len(calls) == 3:
-            raise asyncio.CancelledError
-        return "ok"
-
-    monkeypatch.setattr(heartbeat_module, "beat", flaky)
-    caplog.set_level(logging.INFO, logger="solver")
-    with pytest.raises(asyncio.CancelledError):
-        asyncio.run(run_heartbeat(None, None, interval=0))
-    assert caplog.messages[:2] == ["heartbeat failed", "ok"]
 
 
 def test_late_delivery_is_measured_from_discords_timestamps(caplog):

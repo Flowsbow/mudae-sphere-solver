@@ -1,12 +1,18 @@
+import hashlib
+import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from pathlib import Path
 
 import numpy as np
 
 from src.solver.board import N_CELLS, BoardState, Color
+from src.solver.payouts import affine_fit
 
 N_COLORS = len(Color)
 TIE_TOLERANCE = 1e-9  # floating-point noise; far below a 1-point payout difference
+# Bump when the saved cache's layout changes.
+MEMO_FORMAT = 1
 
 
 class InconsistentBoardError(ValueError):
@@ -31,6 +37,33 @@ class Analysis:
             c for c, v in self.cell_value.items() if v >= top - TIE_TOLERANCE
         )
 
+    def for_payouts(
+        self, base: Mapping[Color, float], payouts: Mapping[Color, float]
+    ) -> "Analysis":
+        """This analysis, made with `base` payouts, in a sphere bonus's payouts.
+
+        The next click's value is exact: it only needs the color odds. The rest
+        of the game is converted with the a x base + b fit of the payouts, which
+        a bonus matches up to Mudae's rounding. The picks stay the base ones:
+        sim/verify_oc_bonus.py (2026-10-22) followed them through every board for 9
+        bonuses: at every decision they were as good as a solver built for the
+        bonus payouts, and the value shown was within 0.33 spheres of the true
+        expected total."""
+        if payouts == base:
+            return self
+        a, b = affine_fit(base, payouts)
+        later = b * (self.clicks_left - 1)
+
+        def convert(cell: int, value: float) -> float:
+            odds = self.color_probs[cell]
+            now_base = sum(p * base[color] for color, p in odds.items())
+            now = sum(p * payouts[color] for color, p in odds.items())
+            return now + a * (value - now_base) + later
+
+        cell_value = {c: convert(c, v) for c, v in self.cell_value.items()}
+        value = 0.0 if self.best is None else cell_value[self.best]
+        return replace(self, value=value, cell_value=cell_value)
+
 
 class Solver:
     def __init__(
@@ -51,6 +84,43 @@ class Solver:
             len(layouts), N_CELLS * N_COLORS
         )
         self._memo: dict[tuple[int, ...], float] = {}
+
+    @property
+    def cached_positions(self) -> int:
+        return len(self._memo)
+
+    def fingerprint(self) -> str:
+        """Changes whenever the boards, their odds, payouts, clicks or symmetries
+        do, so a saved cache from older rules is never loaded."""
+        digest = hashlib.sha256(f"{MEMO_FORMAT} {self.clicks}".encode())
+        for array in (self.layouts, self.weights, self.pay):
+            digest.update(np.ascontiguousarray(array).tobytes())
+        digest.update(repr(self.symmetries).encode())
+        return digest.hexdigest()
+
+    def save_memo(self, path: Path) -> None:
+        """Write every cached position to `path`, replacing it in one step."""
+        keys = np.array(list(self._memo), dtype=np.int8).reshape(-1, N_CELLS)
+        values = np.fromiter(self._memo.values(), dtype=float, count=len(keys))
+        partial = path.with_name(path.name + ".partial")
+        with partial.open("wb") as file:
+            np.savez(file, keys=keys, values=values, fingerprint=self.fingerprint())
+        os.replace(partial, path)
+
+    def load_memo(self, path: Path) -> bool:
+        """Load positions saved by save_memo. False, loading nothing, when the
+        file is missing, unreadable or from different rules."""
+        try:
+            with np.load(path, allow_pickle=False) as saved:
+                if str(saved["fingerprint"]) != self.fingerprint():
+                    return False
+                keys, values = saved["keys"], saved["values"]
+        except (OSError, ValueError, KeyError):
+            return False
+        if keys.ndim != 2 or keys.shape[1] != N_CELLS or len(keys) != len(values):
+            return False
+        self._memo = dict(zip(map(tuple, keys.tolist()), values.tolist(), strict=True))
+        return True
 
     def analyze(self, state: BoardState) -> Analysis:
         clicks_left = self.clicks - state.n_revealed

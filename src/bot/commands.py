@@ -1,5 +1,6 @@
 import asyncio
 import io
+import time
 from pathlib import Path
 
 import discord
@@ -7,7 +8,7 @@ from discord import app_commands
 
 from src.bot.mudae_reader import NotAnOcBoardError, read_oc_board
 from src.bot.settings import PlayerSettings, load_settings, save_settings
-from src.bot.timing import payout_label, timed_solve
+from src.bot.timing import log, payout_label, timed_solve
 from src.render.board_image import render, render_final
 from src.solver.board import (
     BoardInputError,
@@ -26,9 +27,6 @@ EMBED_COLOR = 0xFACC15
 # Chosen 2026-09-29: comfortably longer than a $oc game's 2-minute window.
 BUTTON_TIMEOUT_SECONDS = 600
 CREDIT_URL = "https://github.com/Flowsbow/mudae-sphere-solver"
-# A solver with a full game cached is about 12 MB (tracemalloc, 2026-10-03), so
-# this caps the cache near 100 MB.
-MAX_SOLVERS = 8
 # Chosen 2026-10-03 to reject typos; not a Mudae limit.
 MAX_BONUS = 1000
 
@@ -36,8 +34,14 @@ Payouts = dict[Color, int]
 
 
 class OcService:
-    def __init__(self, settings_path: Path | None = None) -> None:
-        self.solvers: dict[tuple[int, ...], Solver] = {}
+    """One solver at base payouts serves every player; a sphere bonus only
+    converts its numbers (Analysis.for_payouts)."""
+
+    def __init__(
+        self, settings_path: Path | None = None, solver_path: Path | None = None
+    ) -> None:
+        self.solver = Solver(LAYOUTS, prior(), BASE_PAYOUT, CLICKS, SYMMETRIES)
+        self.solver_path = solver_path
         self.lock = asyncio.Lock()
         self.settings_path = settings_path
         saved = load_settings(settings_path)
@@ -56,31 +60,45 @@ class OcService:
         bonus = self.bonus_for.get((user_id, server_id))
         return BASE_PAYOUT if bonus is None else with_bonus(BASE_PAYOUT, *bonus)
 
-    @staticmethod
-    def _key(payouts: Payouts) -> tuple[int, ...]:
-        return tuple(payouts[color] for color in Color)
-
-    def _solver_for(self, payouts: Payouts) -> Solver:
-        key = self._key(payouts)
-        solver = self.solvers.pop(key, None)
-        if solver is None:
-            solver = Solver(LAYOUTS, prior(), payouts, CLICKS, SYMMETRIES)
-        self.solvers[key] = solver
-        if len(self.solvers) > MAX_SOLVERS:
-            del self.solvers[next(iter(self.solvers))]
-        return solver
-
     async def analyze(
         self, state: BoardState, payouts: Payouts = BASE_PAYOUT
     ) -> Analysis:
-        new = self._key(payouts) not in self.solvers
+        new = self.solver.cached_positions == 0
         label = payout_label(payouts, Color.RED)
-        async with timed_solve("$oc", self.lock, new, label, len(self.solvers)):
-            solver = self._solver_for(payouts)
-            return await asyncio.to_thread(solver.analyze, state)
+        async with timed_solve("$oc", self.lock, new, label, 1):
+            analysis = await asyncio.to_thread(self.solver.analyze, state)
+        return analysis.for_payouts(BASE_PAYOUT, payouts)
 
-    async def warm_up(self, payouts: Payouts = BASE_PAYOUT) -> None:
-        await self.analyze(BoardState(), payouts)
+    async def warm_up(self) -> None:
+        """Fill the solver before anyone plays: from solver_path when it was
+        saved under the same rules, otherwise by solving a whole game and
+        saving that for the next start."""
+        started = time.perf_counter()
+        path = self.solver_path
+        if path is not None:
+            async with self.lock:
+                loaded = await asyncio.to_thread(self.solver.load_memo, path)
+            if loaded:
+                log.info(
+                    "loaded the $oc solver from %s in %.1fs",
+                    path.name,
+                    time.perf_counter() - started,
+                )
+                return
+        await self.analyze(BoardState())
+        if path is None:
+            return
+        try:
+            async with self.lock:
+                await asyncio.to_thread(self.solver.save_memo, path)
+        except OSError as err:
+            log.warning("couldn't save the $oc solver to %s: %s", path.name, err)
+            return
+        log.info(
+            "built the $oc solver in %.1fs and saved it to %s",
+            time.perf_counter() - started,
+            path.name,
+        )
 
 
 def build_reply(
@@ -443,8 +461,6 @@ def register(tree: app_commands.CommandTree, service: OcService) -> None:
         user_id, server_id = interaction.user.id, interaction.guild_id
         text = set_sphere_bonus(service, user_id, server_id, flat, percent)
         await interaction.response.send_message(text, ephemeral=True)
-        if flat is not None or percent is not None:
-            await service.warm_up(service.payouts_for(user_id, server_id))
 
     @tree.context_menu(name="Solve sphere board")
     @app_commands.allowed_installs(guilds=True, users=True)

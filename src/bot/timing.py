@@ -1,11 +1,10 @@
-"""Console lines for slow solves and a periodic heartbeat, to find out why the
-first $oc or $oq reply after a quiet stretch can take minutes (Flow, 2026-10-15)."""
+"""Console lines for slow solves, to find out why the first $oc or $oq reply
+after a quiet stretch can take minutes (Flow, 2026-10-15)."""
 
 import logging
 import time
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 log = logging.getLogger("solver")
 
@@ -40,12 +39,3 @@ async def timed_solve(name: str, lock, new: bool, label: str, cached: int):
             label,
             cached,
         )
-
-
-def resident_mb() -> float | None:
-    """This process's memory in RAM right now, on Linux; None elsewhere."""
-    statm = Path("/proc/self/statm")
-    if not statm.exists():
-        return None
-    pages = int(statm.read_text().split()[1])
-    return pages * 4096 / 2**20

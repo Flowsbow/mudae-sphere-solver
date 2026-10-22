@@ -1,6 +1,8 @@
 from collections.abc import Mapping
 from decimal import ROUND_HALF_UP, Decimal
 
+import numpy as np
+
 
 def with_bonus(base: Mapping, flat: int, percent: int) -> dict:
     """Spheres per colour for a player with Mudae's sphere bonuses.
@@ -18,3 +20,13 @@ def with_bonus(base: Mapping, flat: int, percent: int) -> dict:
         color: int((scale * (value + flat)).quantize(Decimal(1), ROUND_HALF_UP))
         for color, value in base.items()
     }
+
+
+def affine_fit(base: Mapping, payouts: Mapping) -> tuple[float, float]:
+    """a and b with payouts[color] close to a x base[color] + b for every color,
+    by least squares. Exact for a bonus before Mudae rounds it to whole spheres."""
+    colors = list(base)
+    x = np.array([base[c] for c in colors], dtype=float)
+    y = np.array([payouts[c] for c in colors], dtype=float)
+    a, b = np.polyfit(x, y, 1)
+    return float(a), float(b)
