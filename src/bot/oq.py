@@ -1,5 +1,6 @@
 import asyncio
 import io
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 import discord
@@ -11,7 +12,7 @@ from src.bot.commands import (
     IMAGE_NAME,
     OcService,
 )
-from src.bot.timing import payout_label, timed_solve
+from src.bot.timing import log, payout_label, timed_solve
 from src.render.board_image import percent, purples_all_known, render_oq
 from src.solver.board import N_CELLS, BoardInputError, cell_name
 from src.solver.ev import InconsistentBoardError
@@ -31,6 +32,7 @@ from src.solver.oq_ev import (
     EXACT_MAX_PLACEMENTS,
     OqAnalysis,
     OqSolver,
+    SearchStopped,
     spheres_collected,
 )
 from src.solver.payouts import with_bonus
@@ -47,6 +49,10 @@ class OqService:
         self.settings = settings
         self.solvers: dict[tuple[tuple[int, int], ...], OqSolver] = {}
         self.lock = asyncio.Lock()
+        self.look_ahead: asyncio.Task | None = None
+        self.look_ahead_cancelled = False
+        # The board the look-ahead is searching right now, and with which solver.
+        self.searching: tuple[OqSolver, tuple[int, ...]] | None = None
 
     def payouts_for(
         self, user_id: int, server_id: int | None, rainbow: bool = False
@@ -61,10 +67,68 @@ class OqService:
     def _key(payouts: Payouts) -> tuple[tuple[int, int], ...]:
         return tuple(sorted(payouts.items()))
 
-    def _timed(self, name: str, payouts: Payouts):
+    @asynccontextmanager
+    async def _timed(
+        self, name: str, payouts: Payouts, codes: tuple[int, ...] | None = None
+    ):
+        await self._stop_look_ahead(payouts, codes)
         new = self._key(payouts) not in self.solvers
         label = payout_label(payouts, RED)
-        return timed_solve(name, self.lock, new, label, len(self.solvers))
+        async with timed_solve(name, self.lock, new, label, len(self.solvers)):
+            yield
+
+    async def _stop_look_ahead(
+        self, payouts: Payouts, codes: tuple[int, ...] | None
+    ) -> None:
+        """Real requests go first. The look-ahead stops at once, unless it is
+        already searching the board asked for: then it finishes that board, which
+        is the quickest way to the answer, and stops there."""
+        task = self.look_ahead
+        if task is None or task.done():
+            return
+        self.look_ahead_cancelled = True
+        # Only a search the look-ahead itself is running gets stopped: while it
+        # waits for the lock, the solver may be busy with someone's request.
+        if self.searching is not None:
+            solver, board = self.searching
+            same = (
+                codes is not None
+                and solver is self.solvers.get(self._key(payouts))
+                and solver._canonical(board) == solver._canonical(codes)
+            )
+            if not same:
+                solver.stop_requested = True
+        await asyncio.shield(task)
+
+    def _start_look_ahead(
+        self, solver: OqSolver, codes: tuple[int, ...], analysis: OqAnalysis
+    ) -> None:
+        if analysis.exact or analysis.best is None:
+            return
+        boards = solver.next_exact_positions(codes, analysis.best)
+        if boards:
+            self.look_ahead_cancelled = False
+            self.look_ahead = asyncio.create_task(self._look_ahead(solver, boards))
+
+    async def _look_ahead(
+        self, solver: OqSolver, boards: list[tuple[int, ...]]
+    ) -> None:
+        """Search the boards the suggested click can lead to while the player
+        clicks, so the reply to the next board comes from the cache."""
+        try:
+            async with self.lock:
+                for board in boards:
+                    if self.look_ahead_cancelled:
+                        return
+                    self.searching = (solver, board)
+                    await asyncio.to_thread(solver.analyze, board)
+        except SearchStopped:
+            pass
+        except Exception:
+            log.exception("$oq look-ahead failed")
+        finally:
+            self.searching = None
+            solver.stop_requested = False
 
     def _solver_for(self, payouts: Payouts) -> OqSolver:
         key = self._key(payouts)
@@ -79,9 +143,11 @@ class OqService:
     async def analyze(
         self, codes: tuple[int, ...], payouts: Payouts = BASE_PAYOUT
     ) -> OqAnalysis:
-        async with self._timed("$oq", payouts):
+        async with self._timed("$oq", payouts, codes):
             solver = self._solver_for(payouts)
-            return await asyncio.to_thread(solver.analyze, codes)
+            analysis = await asyncio.to_thread(solver.analyze, codes)
+        self._start_look_ahead(solver, codes, analysis)
+        return analysis
 
     async def hindsight(
         self,

@@ -211,6 +211,39 @@ Tests check that all 16,800 legal boards and their probabilities are unchanged b
 each symmetry (a fake "symmetry" that shifts the board fails this), and that the
 solver returns identical values and moves with and without it.
 
+### One solver for every sphere bonus
+
+A bonus pays (base + flat) × (1 + percent), rounded to a whole sphere, and every
+`$oc` click collects exactly one sphere. Without the rounding, a bonus player's
+total would be the base total scaled and shifted, so the base solver's moves would
+be exactly right for them too. The bot uses that: one solver at base values serves
+everyone, and a bonus only converts the numbers it shows (the next click exactly
+from the color odds, the rest of the game with the fitted scale and shift).
+
+`sim/verify_oc_bonus.py` checks what the rounding costs. For 9 bonuses from +1 / 0%
+to +2 / 100%, it follows the base solver's moves through every board and compares
+each one with a solver built for the bonus values:
+
+| | Result |
+| --- | --- |
+| Moves worse than the bonus solver's | 0, at every decision, for every bonus |
+| Spheres lost per game | 0.0000 |
+| Largest error in the value shown | 0.33 spheres |
+
+The check was confirmed to fail on a payout table no bonus produces (teal worth more
+than yellow): 37% of moves differ and 5.6 spheres per game are lost. Before this,
+every bonus got its own solver, which took about 2 minutes to build on the bot's
+host the first time each player played.
+
+### Saved between restarts
+
+Solving the empty board fills the solver's cache with every position worth
+remembering (20,337). The bot saves that to `oc_solver.npz` (about 0.7 MB) and
+loads it on the next start instead of solving again: 0.04 s against 7 s on a
+desktop, and against about 2 minutes on the bot's host. The file records a
+fingerprint of the boards, their odds, the payouts and the rules, and is rebuilt
+whenever any of them change.
+
 **<ins>Prefer a visual representation?</ins>**
 
 ![A real board turned and mirrored four ways; every copy still follows the rules](docs/images/symmetry_rules.png)
@@ -293,6 +326,16 @@ left, at most 6 s) and by random clicks (16 to 315 placements, up to 22 s); one 
 with four blues in a corner leaves 1,820 placements and took 43 s. So with 3 left
 and more than 100 placements, the rule plays one more click and the exact search
 starts at 2 left, where even 1,001 placements took 4 s.
+
+To hide that wait, the bot looks ahead. After suggesting the click that leads into
+the exact search, it starts searching the boards that click can lead to, likeliest
+first, while the player clicks. Any real request stops it at once, unless it asks
+for the board already being searched. `sim/time_oq_look_ahead.py` played 20 boards:
+every answer from the look-ahead matched a cold search, and the click led to the
+likeliest board 65% of the time. Then the search has a head start of however long
+the player took to click (the median search took 1.2 s cold, and a reply from the
+finished look-ahead 0.001 s). Otherwise the search starts when the board arrives,
+as it would without the look-ahead.
 
 ### Choosing the early-game rule
 
@@ -454,13 +497,11 @@ on every board message, as it does here.
 
 Auto mode needs **Message Content Intent** enabled on your bot's developer page.
 
-The console logs every solve that took over a second or built a new solver (how
-long it waited in the queue, how long it computed, and the payout table), plus a
-heartbeat line every 5 minutes with the solver caches and memory use, and every
+The console logs whether the `$oc` solver was loaded from `oc_solver.npz` or built
+(and saved there), every solve that took over a second or built a new solver (how
+long it waited in the queue, how long it computed, and the payout table), and every
 reply that reached the player 5 seconds or more after the board or click it answers,
-split into how late Discord delivered it and how long the bot then took. The heartbeat
-also re-solves the fresh `$oc` board for every cached payout table, rebuilding the
-base one if it was pushed out.
+split into how late Discord delivered it and how long the bot then took.
 
 ## Development
 
@@ -470,6 +511,8 @@ python -m venv .venv
 pip install -r requirements.txt
 pytest
 python sim/verify_oc.py
+python sim/verify_oc_bonus.py
+python sim/time_oq_look_ahead.py
 python -m sim.verify_oq
 python -m sim.verify_readme_numbers
 ruff format .

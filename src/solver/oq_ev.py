@@ -29,6 +29,11 @@ EXACT_MAX_PLACEMENTS = 100
 MEMO_LIMIT = 1_000_000
 
 
+class SearchStopped(Exception):
+    """stop_requested was set during a search. Positions it finished stay
+    cached; the rest are worked out again by the next search that needs them."""
+
+
 @dataclass(frozen=True)
 class OqAnalysis:
     clicks_left: int
@@ -77,6 +82,8 @@ class OqSolver:
             self.pay[code] = value
         self.is_purple = layouts == PURPLE
         self._memo: dict[tuple[int, ...], float] = {}
+        # Set from another thread to end a search early with SearchStopped.
+        self.stop_requested = False
 
     def analyze(self, codes: tuple[int, ...]) -> OqAnalysis:
         clicks_left = self.clicks - clicks_used(codes)
@@ -116,6 +123,27 @@ class OqSolver:
         return OqAnalysis(
             clicks_left, best, True, top, values, purple_prob, payout, tied
         )
+
+    def next_exact_positions(
+        self, codes: tuple[int, ...], cell: int
+    ) -> list[tuple[int, ...]]:
+        """The boards clicking `cell` can lead to that will need the exact
+        search, likeliest first. A purple doesn't use a click, so it never leads
+        to one from a board the early rule plays."""
+        if self.clicks - clicks_used(codes) != EXACT_CLICKS + 1:
+            return []
+        idx = self.consistent(codes)
+        if codes[cell] == RED_SHOWN:
+            options = [(len(idx), _set(codes, cell, RED))]
+        else:
+            column = self.layouts[idx, cell]
+            options = [(int((column == k).sum()), _set(codes, cell, k)) for k in COUNTS]
+        limit = self.max_placements
+        return [
+            child
+            for n, child in sorted(options, key=lambda o: -o[0])
+            if n > 1 and (limit is None or n <= limit)
+        ]
 
     def best_with_hindsight(self, codes: tuple[int, ...]) -> tuple[float, int]:
         """The most anyone could collect knowing every purple's place from the
@@ -170,6 +198,8 @@ class OqSolver:
             return 0.0
         if len(idx) == 1:
             return self._known_value(codes, self.layouts[idx[0]])
+        if self.stop_requested:
+            raise SearchStopped
         key = self._canonical(codes)
         if key not in self._memo:
             self._memo[key] = max(self._cell_values(codes, idx).values())
