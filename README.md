@@ -20,7 +20,8 @@ solved through `/manual-input` or `/autoread`; right-click doesn't read `$oq` bo
 Both solvers' expected values are verified by simulation. Games read by `/autoread`
 feed `/global-stats` and `/my-stats`, which check the solver against real games.
 `$oh` is new and uses a simple rule rather than a search, through `/manual-input` or
-`/autoread`; its games don't count toward the stats yet. `$ot` is not planned.
+`/autoread`; its games count toward the stats, with no prediction to check. `$ot` is
+not planned.
 
 ## Using the bot
 
@@ -31,7 +32,8 @@ as you play. If you clicked the cell the solver suggested, type just its color, 
 
 - `$oc`: `/manual-input game: $oc board: D4R B2T`, with colors R O Y G T B.
 - `$oq`: `/manual-input game: $oq board: C3B B4G A1T`, with B T G Y O for 0 to 4
-  purples around a tile, P for a purple, and R for the red once it appears.
+  purples around a tile, P for a purple, and R for the red once it appears (W if
+  it's a rainbow).
 - `$oh`: `/manual-input game: $oh board: A3B B2T* A1B`, with B T G Y O R, W for
   rainbow, D dark, L light, P purple and C for the free `$oc` game. A `*` means you
   clicked that tile. With **Add spheres**, `T A1 B` means "the suggested tile was
@@ -40,7 +42,8 @@ as you play. If you clicked the cell the solver suggested, type just its color, 
 **`/autoread`:** turns auto-read on or off. With it on, play `$oc`, `$oq` or `$oh` as
 usual: the bot reads Mudae's board buttons directly (no image recognition), replies
 with the best click, and updates its reply every time you click. You can also
-right-click any Mudae `$oc` board → Apps → **Solve sphere board**. Two limits: typed
+right-click any Mudae `$oc` board → Apps → **Solve sphere board**. Boards with
+Mudae's `$toggleletter` on (letters on the spheres) are read too. Two limits: typed
 commands are only recognized with Mudae's default `$` prefix, and in very busy
 servers the bot can lose track of a game, because discord.py only reports edits to
 messages still in its cache of recent ones.
@@ -336,6 +339,10 @@ From Mudae's `$oh` rules text and Flow's dumps of two games (`data/mudae/oh_*.tx
   more tiles, a teal 1. Uncovered spheres stay until you click them.
 - Half of all boards hide one free `$oc` game under a covered tile, which blue and
   teal never uncover (Flow). At the end it's the one tile left covered.
+- A dark turns into a random sphere when clicked. If it turns purple, the click is
+  free, like any purple: one real game had 6 non-purple clicks, and Mudae's line for
+  the dark's purple reads "(Free)". The board keeps showing the dark, so the bot
+  counts a dark as free only once the clicks prove it.
 
 What's under a covered tile, and what dark and light pay on average, come from
 colblitz's `$oh` page as copied by Flow. They haven't been checked against our own
@@ -383,11 +390,15 @@ before scaling.
 
 The full [privacy policy](PRIVACY.md) covers everything the bot reads and stores.
 
-`/global-stats` (public reply) and `/my-stats` (only you see it) show:
+`/global-stats` (public reply) and `/my-stats` (only you see it) show an image with
+a scoreboard (games, score against the prediction, red found or hindsight share,
+picks followed) over where the `$oc` red was and the spheres clicked in each game,
+plus a few lines of text. Together they cover:
 
 - games played, spheres gained (the sum of Mudae's own "+N" lines, so bonuses and
   multipliers are included), and how many of the solver's picks were followed;
-- spheres clicked per color, including `$oq` purples, reds and rainbows;
+- spheres clicked per color, including `$oq` purples, reds and rainbows and `$oh`
+  darks, lights and `$oc` games; how often the 4th purple was a rainbow;
 - **`$oc` accuracy:** in games where every pick was followed (a click exactly as good
   as the solver's counts), the average score against the solver's prediction (± one
   standard error), and how often red was found against the predicted 99.98%;
@@ -406,6 +417,11 @@ have typos. Right after a board, Mudae posts a "(Rewards appear here)" message a
 adds a line to it for every click. A game counts only if exactly one rewards message
 appeared within 2 seconds of its board, and its lines match the clicks the bot saw,
 color for color, in order. Otherwise it's left out.
+
+`$oh` is the exception: every finished game counts (still only with exactly one
+rewards message), and its clicks are taken from the rewards message itself. A light's
+line shows what it broke into and their total, a dark's shows what it turned into,
+and the `$oc` game shows as "+1 $oc" (`data/mudae/oh_rewards_light_dark_prize.txt`).
 
 **What's stored:** running totals (counts, sums and sums of squares), never a record
 of each game.
@@ -439,7 +455,9 @@ Auto mode needs **Message Content Intent** enabled on your bot's developer page.
 
 The console logs every solve that took over a second or built a new solver (how
 long it waited in the queue, how long it computed, and the payout table), plus a
-heartbeat line every 5 minutes with the solver caches and memory use. The heartbeat
+heartbeat line every 5 minutes with the solver caches and memory use, and every
+reply that reached the player 5 seconds or more after the board or click it answers,
+split into how late Discord delivered it and how long the bot then took. The heartbeat
 also re-solves the fresh `$oc` board for every cached payout table, rebuilding the
 base one if it was pushed out.
 

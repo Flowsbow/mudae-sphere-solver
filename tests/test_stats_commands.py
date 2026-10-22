@@ -1,20 +1,22 @@
 import asyncio
+import io
 
 import discord
 import pytest
 from discord import app_commands
+from PIL import Image
 from test_totals import PLAYER, oc, oq
 
 from src.bot.stats_commands import (
     DELETE_PROMPT,
     RING_EVERY_BOARD,
     RING_SOLVER,
-    red_grid,
+    STATS_IMAGE,
     register_stats,
-    stats_embed,
+    stats_message,
 )
-from src.bot.totals import StatsStore, Totals
-from src.solver.board import N_CELLS, cell_index
+from src.bot.totals import OhResult, StatsStore, Totals
+from src.render.stats_image import render_stats
 
 
 def _fields(embed):
@@ -27,44 +29,53 @@ def test_ring_shares_match_the_readme():
     assert f"{RING_EVERY_BOARD:.1%}" == "14.3%"
 
 
-def test_no_games_yet_says_so_and_shows_no_numbers():
-    embed = stats_embed(Totals(), "Global stats", "footer")
+def test_no_games_yet_says_so_and_sends_no_image():
+    embed, file = stats_message(Totals(), "Global stats", "footer")
     assert "No games yet" in embed.description
     assert embed.fields == []
+    assert file is None
+    assert render_stats(Totals()) is None
 
 
-def test_stats_show_every_figure_with_its_game_count():
+def _totals():
     totals = Totals()
     for game in (oc(), oc(), oc(followed=3, red="C2"), oq()):
         totals.add(game)
-    embed = stats_embed(totals, "Global stats", "footer")
+    return totals
+
+
+def test_stats_text_keeps_what_the_image_doesnt_show():
+    embed, file = stats_message(_totals(), "Global stats", "footer")
     fields = _fields(embed)
-    assert "3 `$oc` and 1 `$oq` game" in embed.description
+    assert "3 `$oc`, 1 `$oq` and 0 `$oh` games" in embed.description
     assert fields["Spheres gained"] == f"{3 * 999 + 455:,}"
-    assert fields["$oc: spheres clicked"].startswith("Blue 0 · Teal 0 · Green 3")
-    assert "In 2 games where every pick was followed" in fields["$oc: solver accuracy"]
-    assert "± 0.0" in fields["$oc: solver accuracy"]
-    assert (
-        "Red found in 2 of 2 (100.0%); predicted 99.98%"
-        in (fields["$oc: solver accuracy"])
-    )
-    where = fields["$oc: where red was"]
-    assert "Outer ring in 2 of 3 games (66.7% ± 27.2%)" in where
-    assert "expects 0.1 each" in where
-    assert "Rainbow 0" in fields["$oq: spheres clicked"]
-    assert "80.0%" in fields["$oq: solver accuracy"]
+    assert "In 2 games where every pick was followed" in fields["$oc"]
+    assert "Red found in 100.0%; predicted 99.98%" in fields["$oc"]
+    assert "outer ring in 66.7% ± 27.2% of 3 games" in fields["$oc"]
+    assert "80.0%" in fields["$oq"]
+    assert "Rainbow on 0 of 1 collected 4th purples" in fields["$oq"]
+    assert "$oh" not in fields
     assert all(len(value) <= 1024 for value in fields.values())
+    assert embed.image.url == f"attachment://{STATS_IMAGE}"
+    assert file.filename == STATS_IMAGE
 
 
-def test_red_grid_puts_each_count_in_its_cell():
-    cells = [0] * N_CELLS
-    cells[cell_index("A1")] = 12
-    cells[cell_index("D4")] = 3
-    lines = red_grid(cells).strip("`\n").splitlines()
-    assert lines[0].split() == ["1", "2", "3", "4", "5"]
-    assert lines[1].split() == ["A", "12", "0", "0", "0", "0"]
-    assert lines[3].split() == ["C", "0", "0", "-", "0", "0"]
-    assert lines[4].split() == ["D", "0", "0", "0", "3", "0"]
+def test_stats_image_is_a_png_that_grows_with_each_game():
+    totals = _totals()
+    two_games = Image.open(io.BytesIO(render_stats(totals)))
+    totals.add(OhResult(("LIGHT", "DARK", "PRIZE"), 80, 2, 1))
+    three_games = Image.open(io.BytesIO(render_stats(totals)))
+    assert two_games.format == three_games.format == "PNG"
+    assert two_games.width == three_games.width == 640
+    assert three_games.height > two_games.height
+
+
+def test_oh_games_get_their_own_line():
+    totals = Totals()
+    totals.add(OhResult(("BLUE", "PRIZE"), 10, 2, 2))
+    embed, _ = stats_message(totals, "Global stats", "footer")
+    assert "0 `$oc`, 0 `$oq` and 1 `$oh` game read" in embed.description
+    assert "no prediction to check" in _fields(embed)["$oh"]
 
 
 class _Response:
@@ -109,7 +120,8 @@ def test_global_stats_is_public_and_counts_everyone(tree_and_store):
     tree, _ = tree_and_store
     ((_, sent),) = _run(tree.get_command("global-stats"), 99)
     assert sent.get("ephemeral", False) is False
-    assert "1 `$oc` and 1 `$oq` game" in sent["embed"].description
+    assert "1 `$oc`, 1 `$oq` and 0 `$oh` games" in sent["embed"].description
+    assert sent["file"].filename == STATS_IMAGE
     (credit,) = sent["view"].children
     assert credit.url == "https://github.com/Flowsbow/mudae-sphere-solver"
 
@@ -118,7 +130,7 @@ def test_my_stats_is_private_and_only_mine(tree_and_store):
     tree, _ = tree_and_store
     ((_, sent),) = _run(tree.get_command("my-stats"), PLAYER)
     assert sent["ephemeral"] is True
-    assert "1 `$oc` and 0 `$oq` games" in sent["embed"].description
+    assert "1 `$oc`, 0 `$oq` and 0 `$oh` games" in sent["embed"].description
     ((_, other),) = _run(tree.get_command("my-stats"), 12345)
     assert "No games yet" in other["embed"].description
 

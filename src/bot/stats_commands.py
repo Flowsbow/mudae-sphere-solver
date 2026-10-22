@@ -1,3 +1,4 @@
+import io
 import math
 
 import discord
@@ -6,8 +7,11 @@ from discord import app_commands
 
 from src.bot.commands import CREDIT_URL, EMBED_COLOR
 from src.bot.totals import OcTotals, OqTotals, Running, StatsStore, Totals
-from src.solver.board import COL_NAMES, N_CELLS, ROW_NAMES, SIZE
-from src.solver.modes.oc import CENTER, LAYOUT_RED, RED_CELLS, RedModel, prior
+from src.render.stats_image import render_stats
+from src.solver.board import N_CELLS, SIZE
+from src.solver.modes.oc import LAYOUT_RED, RedModel, prior
+
+STATS_IMAGE = "stats.png"
 
 # docs/readme_numbers.json, oc.UNIFORM_CELL.optimal_red_found (base values),
 # matched by simulation in sim/verify_readme_numbers.py (README, "Verification").
@@ -42,10 +46,6 @@ def _difference(running: Running, fmt: str = "+.1f") -> str:
     return f"{running.mean:{fmt}} ± {running.standard_error:{fmt.lstrip('+')}}"
 
 
-def _clicked(counts: dict[str, int]) -> str:
-    return " · ".join(f"{name.title()} {n:,}" for name, n in counts.items())
-
-
 def oc_accuracy_text(totals: OcTotals) -> str:
     luck = totals.followed_luck
     if luck.n == 0:
@@ -54,23 +54,9 @@ def oc_accuracy_text(totals: OcTotals) -> str:
     found = totals.followed_red_found
     return (
         f"In {_games(luck.n)} where every pick was followed: average "
-        f"**{score:.1f}**, solver predicted **{score - luck.mean:.1f}** "
-        f"({_difference(luck)}).\n"
-        f"Red found in {found:,} of {luck.n:,} ({found / luck.n:.1%}); "
-        f"predicted {PREDICTED_RED_FOUND:.2%}."
+        f"**{score:.1f}**, predicted **{score - luck.mean:.1f}**. Red found in "
+        f"{found / luck.n:.1%}; predicted {PREDICTED_RED_FOUND:.2%}."
     )
-
-
-def red_grid(red_cells: list[int]) -> str:
-    width = len(f"{max(red_cells):,}") + 2
-    lines = [" " + "".join(f"{c:>{width}}" for c in COL_NAMES)]
-    for r, row in enumerate(ROW_NAMES):
-        counts = [
-            "-" if cell == CENTER else f"{red_cells[cell]:,}"
-            for cell in range(r * SIZE, (r + 1) * SIZE)
-        ]
-        lines.append(row + "".join(f"{c:>{width}}" for c in counts))
-    return "```\n" + "\n".join(lines) + "\n```"
 
 
 def red_position_text(totals: OcTotals) -> str:
@@ -79,68 +65,75 @@ def red_position_text(totals: OcTotals) -> str:
     share = ring / n
     error = f" ± {math.sqrt(share * (1 - share) / n):.1%}" if 0 < ring < n else ""
     return (
-        f"Outer ring in {ring:,} of {_games(n)} ({share:.1%}{error}). The solver "
+        f"Red on the outer ring in {share:.1%}{error} of {_games(n)}. The solver "
         f"assumes {RING_SOLVER:.1%}; if every legal board were equally likely it "
-        f"would be {RING_EVERY_BOARD:.1%}. Per cell, the solver's model expects "
-        f"{n / len(RED_CELLS):.1f} each (never the center):\n"
-        + red_grid(totals.red_cells)
+        f"would be {RING_EVERY_BOARD:.1%}."
     )
 
 
 def oq_accuracy_text(totals: OqTotals) -> str:
     share, luck = totals.followed_share, totals.followed_luck
-    if share.n == 0:
-        return "No games yet where every solver pick was followed."
-    text = (
-        f"In {_games(share.n)} where every pick was followed: "
-        f"{_difference(share, '.1%')} of the best score possible with hindsight."
-    )
+    parts = []
+    if share.n:
+        parts.append(
+            f"Every pick followed in {_games(share.n)}: "
+            f"{_difference(share, '.1%')} of the best score possible with hindsight."
+        )
     if luck.n:
-        text += (
-            f"\nOnce exact search took over: {_difference(luck)} spheres against "
+        parts.append(
+            f"Once exact search took over: {_difference(luck)} spheres against "
             f"its prediction ({_games(luck.n)})."
         )
-    return text
+    fourth = totals.clicked["RED"] + totals.clicked["RAINBOW"]
+    if fourth:
+        parts.append(
+            f"Rainbow on {totals.clicked['RAINBOW']:,} of {fourth:,} collected 4th "
+            "purples."
+        )
+    return " ".join(parts) or "No games yet where every solver pick was followed."
 
 
-def stats_embed(totals: Totals, title: str, footer: str) -> discord.Embed:
-    oc, oq = totals.oc, totals.oq
-    if oc.games + oq.games == 0:
-        description = "No games yet. Turn on `/autoread` and play `$oc` or `$oq`."
-    else:
-        plural = "s" if oq.games != 1 else ""
+OH_TEXT = (
+    "Solved by a simple rule, not a search, so there's no prediction to check yet."
+)
+
+
+def stats_message(
+    totals: Totals, title: str, footer: str
+) -> tuple[discord.Embed, discord.File | None]:
+    oc, oq, oh = totals.oc, totals.oq, totals.oh
+    games = oc.games + oq.games + oh.games
+    if games == 0:
         description = (
-            f"From {oc.games:,} `$oc` and {oq.games:,} `$oq` game{plural} read by "
-            "`/autoread`."
+            "No games yet. Turn on `/autoread` and play `$oc`, `$oq` or `$oh`."
+        )
+    else:
+        description = (
+            f"From {oc.games:,} `$oc`, {oq.games:,} `$oq` and {oh.games:,} `$oh` "
+            f"game{'s' if oh.games != 1 else ''} read by `/autoread`."
         )
     embed = discord.Embed(title=title, description=description, color=EMBED_COLOR)
-    if oc.games + oq.games:
-        gained = oc.spheres_gained + oq.spheres_gained
-        picks = oc.picks + oq.picks
-        followed = oc.picks_followed + oq.picks_followed
-        embed.add_field(name="Spheres gained", value=f"{gained:,}")
-        embed.add_field(
-            name="Solver picks followed", value=f"{followed:,} of {picks:,}"
-        )
+    embed.set_footer(text=footer)
+    if games == 0:
+        return embed, None
+    gained = oc.spheres_gained + oq.spheres_gained + oh.spheres_gained
+    embed.add_field(name="Spheres gained", value=f"{gained:,}", inline=False)
     if oc.games:
         embed.add_field(
-            name="$oc: spheres clicked", value=_clicked(oc.clicked), inline=False
-        )
-        embed.add_field(
-            name="$oc: solver accuracy", value=oc_accuracy_text(oc), inline=False
-        )
-        embed.add_field(
-            name="$oc: where red was", value=red_position_text(oc), inline=False
+            name="$oc",
+            value=f"{oc_accuracy_text(oc)}\n{red_position_text(oc)}",
+            inline=False,
         )
     if oq.games:
-        embed.add_field(
-            name="$oq: spheres clicked", value=_clicked(oq.clicked), inline=False
-        )
-        embed.add_field(
-            name="$oq: solver accuracy", value=oq_accuracy_text(oq), inline=False
-        )
-    embed.set_footer(text=footer)
-    return embed
+        embed.add_field(name="$oq", value=oq_accuracy_text(oq), inline=False)
+    if oh.games:
+        embed.add_field(name="$oh", value=OH_TEXT, inline=False)
+    embed.set_image(url=f"attachment://{STATS_IMAGE}")
+    return embed, discord.File(io.BytesIO(render_stats(totals)), filename=STATS_IMAGE)
+
+
+def _with(file: discord.File | None) -> dict:
+    return {} if file is None else {"file": file}
 
 
 def credit_view() -> discord.ui.View:
@@ -184,23 +177,24 @@ class DeleteStatsView(discord.ui.View):
 def register_stats(tree: app_commands.CommandTree, stats: StatsStore) -> None:
     @tree.command(
         name="global-stats",
-        description="Solver stats from every player's auto-read $oc and $oq games",
+        description="Solver stats from every player's auto-read $oc, $oq and $oh games",
     )
     @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def global_stats(interaction: discord.Interaction) -> None:
-        embed = stats_embed(stats.all, "Global stats", GLOBAL_FOOTER)
-        await interaction.response.send_message(embed=embed, view=credit_view())
+        embed, file = stats_message(stats.all, "Global stats", GLOBAL_FOOTER)
+        await interaction.response.send_message(
+            embed=embed, view=credit_view(), **_with(file)
+        )
 
     @tree.command(name="my-stats", description="Your stats from auto-read games")
     @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def my_stats(interaction: discord.Interaction) -> None:
         totals = stats.players.get(interaction.user.id, Totals())
+        embed, file = stats_message(totals, "Your stats", MY_FOOTER)
         await interaction.response.send_message(
-            embed=stats_embed(totals, "Your stats", MY_FOOTER),
-            view=credit_view(),
-            ephemeral=True,
+            embed=embed, view=credit_view(), ephemeral=True, **_with(file)
         )
 
     @tree.command(name="delete-stats", description="Delete your saved stats")
