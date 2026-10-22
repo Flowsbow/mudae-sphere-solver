@@ -1,6 +1,8 @@
 import re
 from dataclasses import dataclass, field
 
+from src.bot.emoji_names import plain_text
+
 # Everything below comes from Flow's inspector dumps, 2026-10-05:
 # data/mudae/rewards_placeholder.txt, oc_rewards_finished.txt,
 # oq_rewards_finished.txt and oh_rewards_midgame.txt.
@@ -21,6 +23,14 @@ EMOJI_LABEL = {
     "sp": "RED",
     "spW": "RAINBOW",
 }
+# $oh lines that don't follow the one-sphere pattern, from a real game's rewards
+# message (data/mudae/oh_rewards_light_dark_prize.txt, Flow, 2026-10-15):
+# "<:spL:..> breaks down into <:spP:..> + <:spB:..> + ... => **+45**",
+# "<:spD:..>  turns into <:spG:..>" followed by the green's own line, and
+# "<:spU:..> **+1 $oc**" for the free $oc game.
+OH_LIGHT = re.compile(r"<:spL:\d+>.*?=>\s*\*\*\+([\d,]+)\*\*")
+OH_DARK = re.compile(r"<:spD:\d+>\s*turns into\s*<:(sp[A-Z]?):\d+>")
+OH_PRIZE = re.compile(r"<:spU:\d+>\s*\*\*\+1 \$oc\*\*")
 # Discord message IDs hold their creation time in milliseconds since this epoch
 # (Discord developer docs, "Snowflakes"). Flow's dumps give gaps of 0.68 s ($oq)
 # and 0.39 s ($oh) between a board and its rewards message.
@@ -38,7 +48,7 @@ class Reward:
 def parse_rewards(text: str) -> list[Reward]:
     return [
         Reward(emoji, int(amount.replace(",", "")))
-        for emoji, amount in REWARD_LINE.findall(text)
+        for emoji, amount in REWARD_LINE.findall(plain_text(text))
     ]
 
 
@@ -90,3 +100,44 @@ class ChannelLog:
                     log[channel_id] = kept
                 else:
                     del log[channel_id]
+
+
+@dataclass(frozen=True)
+class OhReward:
+    label: str  # an EMOJI_LABEL value, or "LIGHT", "DARK" or "PRIZE"
+    spheres: int
+    became: str | None = None  # what a dark turned into
+
+
+def parse_oh_rewards(text: str) -> list[OhReward]:
+    """One entry per $oh click, in click order. A dark's line and the line of
+    the sphere it turned into make one entry."""
+    found: list[OhReward] = []
+    dark_became: str | None = None
+    for line in plain_text(text).split("\n"):
+        if match := OH_DARK.search(line):
+            dark_became = EMOJI_LABEL.get(match[1], match[1])
+            continue
+        if match := OH_LIGHT.search(line):
+            entries = [OhReward("LIGHT", int(match[1].replace(",", "")))]
+        elif OH_PRIZE.search(line):
+            entries = [OhReward("PRIZE", 0)]
+        else:
+            entries = [
+                OhReward(EMOJI_LABEL.get(emoji, emoji), int(amount.replace(",", "")))
+                for emoji, amount in REWARD_LINE.findall(line)
+            ]
+        for entry in entries:
+            if dark_became is not None:
+                entry = OhReward("DARK", entry.spheres, became=dark_became)
+                dark_became = None
+            found.append(entry)
+    return found
+
+
+def oh_click_matches(clicked: str, reward: OhReward) -> bool:
+    """Whether a click the bot saw is this rewards line. A clicked dark may show
+    on the board as itself or as what it turned into; that isn't known yet."""
+    if reward.label == "DARK":
+        return clicked in ("DARK", reward.became)
+    return clicked == reward.label

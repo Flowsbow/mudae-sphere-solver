@@ -13,6 +13,21 @@ FILE_VERSION = 1
 OC_LABELS = tuple(color.name for color in Color)
 # The 4th purple is red or, sometimes, rainbow (Flow, 2026-10-05).
 OQ_LABELS = (*OC_LABELS[:5], "PURPLE", "RED", "RAINBOW")
+# $oh adds dark, light and the free $oc game (src/solver/modes/oh.py).
+OH_LETTER_LABEL = {
+    "B": "BLUE",
+    "T": "TEAL",
+    "G": "GREEN",
+    "Y": "YELLOW",
+    "O": "ORANGE",
+    "R": "RED",
+    "W": "RAINBOW",
+    "D": "DARK",
+    "L": "LIGHT",
+    "P": "PURPLE",
+    "C": "PRIZE",
+}
+OH_LABELS = tuple(OH_LETTER_LABEL.values())
 T = TypeVar("T")
 
 
@@ -86,6 +101,17 @@ class OqResult:
         )
 
 
+@dataclass(frozen=True)
+class OhResult:
+    """One finished auto-read $oh game, checked against Mudae's rewards. There's
+    no prediction to compare with: $oh is solved by a rule, not a search."""
+
+    clicks: tuple[str, ...]  # OH_LABELS, in click order
+    spheres_gained: int
+    picks: int
+    picks_followed: int
+
+
 def _counter(labels: tuple[str, ...]) -> Callable[[], dict[str, int]]:
     return lambda: dict.fromkeys(labels, 0)
 
@@ -147,6 +173,27 @@ class OqTotals:
             raise ValueError("$oq totals have the wrong colors")
 
 
+@dataclass
+class OhTotals:
+    games: int = 0
+    spheres_gained: int = 0
+    clicked: dict[str, int] = field(default_factory=_counter(OH_LABELS))
+    picks: int = 0
+    picks_followed: int = 0
+
+    def add(self, result: OhResult) -> None:
+        self.games += 1
+        self.spheres_gained += result.spheres_gained
+        for label in result.clicks:
+            self.clicked[label] += 1
+        self.picks += result.picks
+        self.picks_followed += result.picks_followed
+
+    def check(self) -> None:
+        if tuple(self.clicked) != OH_LABELS:
+            raise ValueError("$oh totals have the wrong spheres")
+
+
 def _from_dict(cls: type[T], data: dict) -> T:
     totals = cls(
         **{
@@ -162,16 +209,23 @@ def _from_dict(cls: type[T], data: dict) -> T:
 class Totals:
     oc: OcTotals = field(default_factory=OcTotals)
     oq: OqTotals = field(default_factory=OqTotals)
+    oh: OhTotals = field(default_factory=OhTotals)
 
-    def add(self, result: OcResult | OqResult) -> None:
+    def add(self, result: OcResult | OqResult | OhResult) -> None:
         if isinstance(result, OcResult):
             self.oc.add(result)
-        else:
+        elif isinstance(result, OqResult):
             self.oq.add(result)
+        else:
+            self.oh.add(result)
 
     @classmethod
     def from_dict(cls, data: dict) -> "Totals":
-        return cls(_from_dict(OcTotals, data["oc"]), _from_dict(OqTotals, data["oq"]))
+        # Files saved before $oh was recorded (2026-10-15) have no "oh" entry.
+        oh = _from_dict(OhTotals, data["oh"]) if "oh" in data else OhTotals()
+        return cls(
+            _from_dict(OcTotals, data["oc"]), _from_dict(OqTotals, data["oq"]), oh
+        )
 
 
 def _load(path: Path | None, parse: Callable[[dict], T]) -> T | None:
@@ -205,7 +259,7 @@ class StatsStore:
         self.all = _load(global_path, Totals.from_dict) or Totals()
         self.players = _load(players_path, _players) or {}
 
-    def record(self, user_id: int, result: OcResult | OqResult) -> None:
+    def record(self, user_id: int, result: OcResult | OqResult | OhResult) -> None:
         self.all.add(result)
         self.players.setdefault(user_id, Totals()).add(result)
         self.save()

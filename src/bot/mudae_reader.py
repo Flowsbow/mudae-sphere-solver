@@ -2,9 +2,11 @@ from dataclasses import dataclass
 
 import discord
 
+from src.bot.emoji_names import plain_emoji
 from src.solver.board import N_CELLS, BoardInputError, BoardState, Color
+from src.solver.modes.oh import PRIZE
 from src.solver.modes.oq import PURPLE, RED, RED_SHOWN
-from src.solver.oh_rule import OhBoard
+from src.solver.oh_rule import OhBoard, with_free_darks
 from src.solver.oq_board import check
 from src.solver.oq_ev import HIDDEN
 
@@ -50,7 +52,7 @@ def buttons_of(message: discord.Message) -> list[ButtonInfo]:
             style = getattr(item, "style", None)
             found.append(
                 ButtonInfo(
-                    emoji=emoji.name if emoji is not None else None,
+                    emoji=plain_emoji(emoji.name) if emoji is not None else None,
                     disabled=bool(getattr(item, "disabled", False)),
                     style=getattr(style, "name", style),
                 )
@@ -158,8 +160,7 @@ def read_oq_board(message: discord.Message) -> OqMudaeBoard:
 # $oh, from Flow's dumps of real games, 2026-10-08: data/mudae/oh_fresh.txt,
 # oh_midgame.txt, oh_finished.txt and oh_finished_dark_prize.txt.
 OH_RULES = "Blue spheres unveil 3 buttons, teal unveil 1."
-# The light sphere's emoji hasn't been seen in a dump yet, so a board showing one
-# can't be read.
+# Light is "spL": data/mudae/oh_rewards_light_dark_prize.txt (Flow, 2026-10-15).
 OH_EMOJI_LETTER = {
     "spB": "B",
     "spT": "T",
@@ -169,6 +170,7 @@ OH_EMOJI_LETTER = {
     "sp": "R",
     "spW": "W",
     "spD": "D",
+    "spL": "L",
     "spP": "P",
 }
 
@@ -189,14 +191,6 @@ def read_oh_board(message: discord.Message) -> OhMudaeBoard:
     buttons = buttons_of(message)
     if len(buttons) != N_CELLS:
         raise NotAnOhBoardError(f"expected {N_CELLS} buttons, found {len(buttons)}")
-    cells: list[str | None] = []
-    for button in buttons:
-        if button.emoji == HIDDEN_EMOJI:
-            cells.append(None)
-        elif button.emoji in OH_EMOJI_LETTER:
-            cells.append(OH_EMOJI_LETTER[button.emoji])
-        else:
-            raise NotAnOhBoardError(f"unknown emoji {button.emoji!r}")
     # During the game Mudae disables the tiles already clicked (oh_midgame.txt). At
     # the end it disables every tile, uncovers all but the $oc prize, and marks the
     # clicked ones blurple (oh_finished.txt, oh_finished_dark_prize.txt).
@@ -206,8 +200,19 @@ def read_oh_board(message: discord.Message) -> OhMudaeBoard:
         for i, button in enumerate(buttons)
         if (button.style == CLICKED_STYLE if finished else button.disabled)
     )
+    cells: list[str | None] = []
+    for i, button in enumerate(buttons):
+        if button.emoji == HIDDEN_EMOJI:
+            # A clicked tile still showing "spU" is taken to be the $oc prize: its
+            # rewards line uses "spU" (oh_rewards_light_dark_prize.txt). No board
+            # dump with a clicked prize has been seen yet.
+            cells.append(PRIZE if i in clicked else None)
+        elif button.emoji in OH_EMOJI_LETTER:
+            cells.append(OH_EMOJI_LETTER[button.emoji])
+        else:
+            raise NotAnOhBoardError(f"unknown emoji {button.emoji!r}")
     try:
-        board = OhBoard(tuple(cells), clicked)
+        board = with_free_darks(tuple(cells), clicked, live=not finished)
     except BoardInputError as err:
         raise NotAnOhBoardError(str(err)) from err
     return OhMudaeBoard(board, finished)

@@ -11,7 +11,7 @@ import re
 
 from src.solver.board import N_CELLS, BoardInputError, cell_index, cell_name
 from src.solver.modes.oh import COLORS, PRIZE
-from src.solver.oh_rule import OhBoard
+from src.solver.oh_rule import OhBoard, with_free_darks
 
 LETTERS = " ".join(COLORS + PRIZE)
 TOKEN = re.compile(r"^([A-E][1-5])?([A-Z])?(\*)?$")
@@ -72,7 +72,7 @@ def parse_board(text: str) -> OhBoard:
         if letter is None:
             raise BoardInputError(f"{word!r}: add the sphere letter, like {word[:2]}G")
         _apply(cells, clicked, cell, letter, star)
-    return OhBoard(tuple(cells), frozenset(clicked))
+    return with_free_darks(tuple(cells), frozenset(clicked), live=False)
 
 
 def add_spheres(board: OhBoard, text: str, suggested: int | None = None) -> OhBoard:
@@ -88,4 +88,4 @@ def add_spheres(board: OhBoard, text: str, suggested: int | None = None) -> OhBo
                 raise BoardInputError(f"{word!r}: start with a cell, like C4G")
             cell, star = suggested, True
         _apply(cells, clicked, cell, letter, star)
-    return OhBoard(tuple(cells), frozenset(clicked))
+    return with_free_darks(tuple(cells), frozenset(clicked), live=False)

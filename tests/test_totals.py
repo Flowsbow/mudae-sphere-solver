@@ -6,11 +6,13 @@ import pytest
 from src.bot.totals import (
     OcResult,
     OcTotals,
+    OhResult,
     OqResult,
     OqTotals,
     Running,
     StatsFileError,
     StatsStore,
+    Totals,
 )
 from src.solver.board import cell_index
 
@@ -192,8 +194,28 @@ def test_global_stats_hold_no_ids_and_my_stats_only_the_player_id(tmp_path):
 
     global_text = paths[0].read_text()
     assert str(PLAYER) not in global_text
-    assert set(json.loads(global_text)) == {"version", "oc", "oq"}
+    assert set(json.loads(global_text)) == {"version", "oc", "oq", "oh"}
 
     players_text = paths[1].read_text()
     assert list(json.loads(players_text)["players"]) == [str(PLAYER)]
     assert players_text.count(str(PLAYER)) == 1
+
+
+def test_files_saved_before_oh_was_recorded_still_load(tmp_path):
+    old = StatsStore(tmp_path / "s.json", tmp_path / "m.json")
+    old.record(PLAYER, oc())
+    data = json.loads((tmp_path / "s.json").read_text())
+    del data["oh"]
+    (tmp_path / "s.json").write_text(json.dumps(data))
+    loaded = StatsStore(tmp_path / "s.json", tmp_path / "m.json")
+    assert loaded.all.oc.games == 1
+    assert loaded.all.oh.games == 0
+
+
+def test_oh_results_count_spheres_and_picks():
+    totals = Totals()
+    totals.add(OhResult(("LIGHT", "BLUE", "DARK", "PRIZE"), 90, 4, 3))
+    assert totals.oh.games == 1
+    assert totals.oh.clicked["DARK"] == totals.oh.clicked["PRIZE"] == 1
+    assert (totals.oh.picks, totals.oh.picks_followed) == (4, 3)
+    assert totals.oc.games == totals.oq.games == 0

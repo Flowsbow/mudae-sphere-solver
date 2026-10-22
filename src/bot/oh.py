@@ -10,6 +10,7 @@ from src.bot.commands import (
     IMAGE_NAME,
     OcService,
 )
+from src.bot.totals import OH_LETTER_LABEL
 from src.render.board_image import percent, render_oh
 from src.solver.board import BoardInputError, cell_name
 from src.solver.modes.oc import CLICKS as OC_CLICKS
@@ -83,6 +84,13 @@ def describe(advice: OhAdvice, board: OhBoard) -> tuple[str, str | None]:
     )
 
 
+def followed(advice: OhAdvice, cell: int) -> bool:
+    """A click worth exactly as much as the rule's pick counts as following it;
+    with a covered tile picked, that's any covered tile."""
+    value = advice.cell_value.get(cell)
+    return value is not None and abs(value - advice.cell_value[advice.best]) < 1e-9
+
+
 def collected(board: OhBoard, payouts: Payouts) -> tuple[float, bool]:
     """Spheres from the clicked tiles (dark and light at their average), and
     whether the $oc prize was one of them."""
@@ -137,6 +145,9 @@ class OhBoardView(discord.ui.View):
         self.oc_value = oc_value
         self.message: discord.Message | None = None
         self.last_best: int | None = None
+        self.last_advice: OhAdvice | None = None
+        self.history: list[str] = []  # OH_LETTER_LABEL of each click, in order
+        self.followed = self.judged = 0
         if not manual:
             self.remove_item(self.add_sphere)
         self.add_item(
@@ -146,8 +157,14 @@ class OhBoardView(discord.ui.View):
     async def update(
         self, board: OhBoard, final: bool = False
     ) -> tuple[discord.Embed, discord.File]:
+        clicked = sorted(board.clicked - self.board.clicked)
+        if len(clicked) == 1 and self.last_advice is not None:
+            self.judged += 1
+            self.followed += followed(self.last_advice, clicked[0])
+        self.history += [OH_LETTER_LABEL[board.cells[c]] for c in clicked]
         self.board = board
         advice = advise(board, self.payouts, self.oc_value)
+        self.last_advice = None if final or advice.best is None else advice
         self.last_best = None if final else advice.best
         over = final or advice.best is None
         self.add_sphere.disabled = over

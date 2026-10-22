@@ -397,7 +397,7 @@ def test_saved_stats_hold_no_message_ids(service, tmp_path):
         assert str(BOARD_ID) not in text
         assert str(REWARDS_ID) not in text
         assert "1120" not in text and "1,120" not in text
-    assert set(json.loads(global_text)) == {"version", "oc", "oq"}
+    assert set(json.loads(global_text)) == {"version", "oc", "oq", "oh"}
     assert set(json.loads(players_text)["players"]) == {str(PLAYER)}
     assert StatsStore(*paths).all.oc.games == 1
 

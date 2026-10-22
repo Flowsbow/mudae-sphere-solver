@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import re
 import time
 from dataclasses import dataclass, field, replace
@@ -26,9 +27,10 @@ from src.bot.rewards import (
     REWARDS_PLACEHOLDER,
     ChannelLog,
     created_ms,
+    parse_oh_rewards,
     parse_rewards,
 )
-from src.bot.totals import OQ_LABELS, OcResult, OqResult, StatsStore
+from src.bot.totals import OQ_LABELS, OcResult, OhResult, OqResult, StatsStore
 from src.solver.board import BoardState, Color
 from src.solver.ev import InconsistentBoardError
 from src.solver.modes.oq import PURPLE, RED
@@ -39,10 +41,14 @@ from src.solver.stats import game_stats
 GAME_COMMAND = re.compile(r"^\$o([cqh])(\s|$)", re.IGNORECASE)
 # Chosen 2026-09-29: a Mudae board this soon after someone types $oc is theirs.
 PENDING_SECONDS = 30
+# Chosen 2026-10-21: log any reply that reached the player this late, to find why
+# the first game after a quiet stretch is slow (the solves themselves are fast).
+SLOW_REPLY_SECONDS = 5.0
 # Chosen 2026-09-29: forget games this old; a game lasts 2 minutes.
 GAME_MAX_AGE_SECONDS = 15 * 60
 
-Result = OcResult | OqResult
+Result = OcResult | OqResult | OhResult
+log = logging.getLogger("solver")
 
 
 @dataclass
@@ -84,6 +90,42 @@ def oq_result(view: OqBoardView) -> OqResult:
         score=stats.score,
         best=stats.best,
         expected=stats.expected,
+    )
+
+
+def _late_by(message: discord.Message) -> float:
+    """Seconds between Mudae posting or editing the message and the bot getting
+    it: Discord's own timestamps (edited_at, or the time inside the message ID)."""
+    edited = getattr(message, "edited_at", None)
+    posted_ms = edited.timestamp() * 1000 if edited else created_ms(message.id)
+    return max(time.time() - posted_ms / 1000, 0.0)
+
+
+def _log_slow_reply(
+    game: AutoGame | None, event: str, late: float, received: float
+) -> None:
+    if game is None:
+        return
+    took = time.perf_counter() - received
+    if late + took < SLOW_REPLY_SECONDS:
+        return
+    name = {OqBoardView: "$oq", OhBoardView: "$oh"}.get(type(game.view), "$oc")
+    log.info(
+        "slow reply %s %s: Discord delivered it %.1fs after Mudae posted it, then "
+        "the bot took %.1fs to solve, draw and send",
+        name,
+        event,
+        late,
+        took,
+    )
+
+
+def oh_result(view: OhBoardView) -> OhResult:
+    return OhResult(
+        clicks=tuple(view.history),
+        spheres_gained=0,
+        picks=view.judged,
+        picks_followed=view.followed,
     )
 
 
@@ -140,12 +182,14 @@ class AutoTracker:
             return
         if is_sphere_board(message):
             self.log.add_board(message.channel.id, message.id)
+        received, late = time.perf_counter(), _late_by(message)
         if OQ_RULES in message.content:
             await self._start_oq(message)
         elif OH_RULES in message.content:
             await self._start_oh(message)
         else:
             await self._start_oc(message)
+        _log_slow_reply(self.games.get(message.id), "board", late, received)
 
     async def _start_oc(self, message: discord.Message) -> None:
         try:
@@ -233,12 +277,14 @@ class AutoTracker:
         game = self.games.get(after.id)
         if game is None:
             return
+        received, late = time.perf_counter(), _late_by(after)
         if isinstance(game.view, OqBoardView):
             await self._oq_edit(after, game)
         elif isinstance(game.view, OhBoardView):
             await self._oh_edit(after, game)
         else:
             await self._oc_edit(after, game)
+        _log_slow_reply(game, "click", late, received)
 
     async def _oc_edit(self, after: discord.Message, game: AutoGame) -> None:
         try:
@@ -315,7 +361,9 @@ class AutoTracker:
     async def _oh_edit(self, after: discord.Message, game: AutoGame) -> None:
         try:
             board = read_oh_board(after)
-        except NotAnOhBoardError:
+        except NotAnOhBoardError as err:
+            # The game stops updating here, so say why in the console.
+            log.warning("auto-read $oh: can't read the board (%s)", err)
             return
         view = game.view
         async with game.lock:
@@ -326,6 +374,7 @@ class AutoTracker:
             embed, file = await view.update(board.board, final=board.finished)
             if board.finished:
                 self.games.pop(after.id, None)
+                self._await_rewards(after.id, game, oh_result(view))
             game.reply = await game.reply.edit(
                 embed=embed, attachments=[file], view=view
             )
@@ -341,7 +390,22 @@ class AutoTracker:
         if waiting is None:
             return
         owner, result = waiting
-        rewards = parse_rewards(self.rewards_text.get(rewards_id, ""))
+        text = self.rewards_text.get(rewards_id, "")
+        if isinstance(result, OhResult):
+            # $oh counts every game, whatever was clicked (Flow, 2026-10-16): the
+            # rewards message is the record of the clicks, so it isn't checked
+            # against the order the bot saw them in.
+            oh_rewards = parse_oh_rewards(text)
+            if len(oh_rewards) < len(result.clicks):
+                return
+            del self.awaiting[rewards_id]
+            clicks = tuple(r.label for r in oh_rewards)
+            gained = sum(r.spheres for r in oh_rewards)
+            self.stats.record(
+                owner, replace(result, clicks=clicks, spheres_gained=gained)
+            )
+            return
+        rewards = parse_rewards(text)
         if len(rewards) < len(result.clicks):
             return
         del self.awaiting[rewards_id]

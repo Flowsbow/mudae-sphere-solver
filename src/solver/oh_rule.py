@@ -35,6 +35,12 @@ Cells = tuple[str | None, ...]  # a sphere letter, or None for a covered tile
 class OhBoard:
     cells: Cells = (None,) * N_CELLS
     clicked: frozenset[int] = frozenset()
+    # A dark that turns purple is free: Mudae's rewards line for that purple reads
+    # "(Free)", and the game in data/mudae/oh_finished_letters.txt took 6 non-purple
+    # clicks, one of them that dark (oh_rewards_letters.txt). The board keeps
+    # showing the dark, so how many were free has to be worked out from the clicks
+    # (with_free_darks below).
+    free_darks: int = 0
 
     def __post_init__(self) -> None:
         if len(self.cells) != N_CELLS:
@@ -49,12 +55,19 @@ class OhBoard:
                 raise BoardInputError(f"{cell_name(cell)} is clicked but covered")
         if self.cells.count(PRIZE) > 1:
             raise BoardInputError("a board has at most one $oc prize")
+        if not 0 <= self.free_darks <= self.darks_clicked:
+            raise BoardInputError("more free darks than darks clicked")
         if self.clicks_used > CLICKS:
             raise BoardInputError(f"a game has only {CLICKS} paid clicks")
 
     @property
+    def darks_clicked(self) -> int:
+        return sum(self.cells[cell] == DARK for cell in self.clicked)
+
+    @property
     def clicks_used(self) -> int:
-        return sum(self.cells[cell] != PURPLE for cell in self.clicked)
+        paid = sum(self.cells[cell] != PURPLE for cell in self.clicked)
+        return paid - self.free_darks
 
     @property
     def clicks_left(self) -> int:
@@ -67,6 +80,19 @@ class OhBoard:
     @property
     def prize_found(self) -> bool:
         return PRIZE in self.cells
+
+
+def with_free_darks(cells: Cells, clicked: frozenset[int], live: bool) -> OhBoard:
+    """A board whose darks are counted as free only as far as the clicks show:
+    when there are more than 5 paid clicks, or when Mudae still lets the player
+    click (`live`) although every click looks used. Until then a dark is
+    assumed to cost a click."""
+    darks = sum(cells[c] == DARK for c in clicked)
+    paid = sum(cells[c] != PURPLE for c in clicked)
+    free = max(paid - CLICKS, 0)
+    if live and paid - free >= CLICKS:
+        free += 1
+    return OhBoard(cells, clicked, free_darks=min(free, darks))
 
 
 @dataclass(frozen=True)

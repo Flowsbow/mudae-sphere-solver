@@ -348,7 +348,7 @@ def set_auto(service: OcService, user_id: int, on: bool) -> str:
     if on:
         return (
             "Auto-read on. Type `$oc`, `$oq` or `$oh` and I'll solve Mudae's board as "
-            "you play, in servers I've joined. Your finished `$oc` and `$oq` games "
+            "you play, in servers I've joined. Your finished games "
             "count toward "
             "`/global-stats` and `/my-stats` (saved under your Discord ID; "
             "`/delete-stats` removes them). Run `/autoread` again to turn "

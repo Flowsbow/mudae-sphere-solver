@@ -1,5 +1,6 @@
 import asyncio
 
+import discord
 import pytest
 from test_auto import _Message, _play, _rows
 from test_rewards import dump_content
@@ -13,6 +14,8 @@ from src.bot.mudae_reader import (
     read_oh_board,
 )
 from src.bot.oh import OhBoardView, OhService
+from src.bot.rewards import REWARDS_PLACEHOLDER, oh_click_matches, parse_oh_rewards
+from src.bot.totals import StatsStore
 from src.solver.board import cell_index
 from src.solver.modes.oh import BASE_PAYOUT, OC_GAME_VALUE
 from src.solver.oh_board import parse_board
@@ -145,3 +148,130 @@ def test_manual_view_marks_game_over_after_five_paid_clicks(service):
     assert embed.description == "Plus the free $oc game."
     assert view.add_sphere.disabled
     assert file.filename == "board.png"
+
+
+def _at(ms):
+    return (3_000_000 + ms) << 22
+
+
+def _oh_rewards(lines):
+    text = "\n".join(lines) if lines else REWARDS_PLACEHOLDER
+    return _Message(MUDAE_ID, text, message_id=_at(400))
+
+
+LINES = {"T": "<:spT:1> **+20**", "B": "<:spB:1> **+10**", "G": "<:spG:1> **+35**"}
+
+
+def _play_oh(service, stats, rewards_order):
+    service.auto_users.add(PLAYER)
+    try:
+        _play(
+            service,
+            ("new", _Message(PLAYER, "$oh")),
+            ("new", _oh("oh_fresh.txt", message_id=_at(0))),
+            ("new", _oh_rewards([])),
+            ("edit", _oh("oh_midgame.txt", message_id=_at(0))),
+            ("edit", _oh("oh_finished.txt", message_id=_at(0))),
+            ("edit", _oh_rewards([LINES[c] for c in rewards_order])),
+            stats=stats,
+        )
+    finally:
+        service.auto_users.discard(PLAYER)
+
+
+def test_a_finished_oh_game_is_recorded_from_its_rewards(service):
+    stats = StatsStore()
+    # The midgame dump shows 4 clicks at once (B2 teal, B3, C5, D2 blue), then C4.
+    _play_oh(service, stats, "TBBBG")
+    totals = stats.all.oh
+    assert totals.games == 1
+    assert totals.spheres_gained == 85
+    assert totals.clicked["TEAL"] == 1 and totals.clicked["BLUE"] == 3
+    assert totals.clicked["GREEN"] == 1
+    # Only the last click came alone, so only it was judged.
+    assert (totals.picks, totals.picks_followed) == (1, 1)
+    assert stats.all.oc.games == stats.all.oq.games == 0
+
+
+def test_an_oh_game_counts_whatever_order_the_bot_saw(service):
+    # Flow, 2026-10-16: $oh stats track every game, so Mudae's rewards decide.
+    stats = StatsStore()
+    _play_oh(service, stats, "BTBBG")
+    totals = stats.all.oh
+    assert totals.games == 1
+    assert totals.spheres_gained == 85
+    assert totals.clicked["TEAL"] == 1 and totals.clicked["BLUE"] == 3
+
+
+def test_an_oh_game_waits_for_every_rewards_line(service):
+    stats = StatsStore()
+    _play_oh(service, stats, "TBBB")
+    assert stats.all.oh.games == 0
+
+
+def test_an_unreadable_oh_board_is_logged(service, caplog):
+    import logging
+
+    caplog.set_level(logging.WARNING, logger="solver")
+    broken = _oh("oh_midgame.txt", message_id=_at(0))
+    broken.components[0].children[0].emoji = discord.PartialEmoji(name="spX")
+    service.auto_users.add(PLAYER)
+    try:
+        _play(
+            service,
+            ("new", _Message(PLAYER, "$oh")),
+            ("new", _oh("oh_fresh.txt", message_id=_at(0))),
+            ("edit", broken),
+        )
+    finally:
+        service.auto_users.discard(PLAYER)
+    assert "can't read the board (unknown emoji 'spX')" in caplog.text
+
+
+def test_oh_rewards_read_light_dark_and_prize():
+    rewards = parse_oh_rewards(dump_content("oh_rewards_light_dark_prize.txt"))
+    assert [(r.label, r.spheres) for r in rewards] == [
+        ("LIGHT", 45),  # breaks into purple + blue + blue + teal = 5+10+10+20
+        ("BLUE", 10),
+        ("BLUE", 10),
+        ("PURPLE", 5),
+        ("DARK", 35),
+        ("PRIZE", 0),
+    ]
+    dark = rewards[4]
+    assert dark.became == "GREEN"
+    assert oh_click_matches("DARK", dark) and oh_click_matches("GREEN", dark)
+    assert not oh_click_matches("BLUE", dark)
+
+
+def test_a_clicked_covered_tile_reads_as_the_prize():
+    message = _oh("oh_midgame.txt")
+    a2 = message.components[0].children[1]
+    assert a2.emoji.name == "spU"
+    a2.disabled = True  # clicked, still covered
+    board = read_oh_board(message).board
+    assert board.cells[cell_index("A2")] == "C"
+    assert board.prize_found
+
+
+def test_a_light_sphere_is_read():
+    message = _oh("oh_fresh.txt")
+    message.components[0].children[2].emoji = discord.PartialEmoji(name="spL")
+    assert read_oh_board(message).board.cells[cell_index("A3")] == "L"
+
+
+def test_going_against_the_pick_keeps_the_game_going(service):
+    # Flow's game, 2026-10-16: A4 green was picked, B2 (covered) was clicked
+    # instead, and the blue it held uncovered a light at D2.
+    oh = OhService(service)
+    before = parse_board("A1T* A2P* A3T A4G A5D* B1B* B5B D3B D5G E1G E3B E5B")
+    view = OhBoardView(oh, before, PLAYER, BASE_PAYOUT, OC_GAME_VALUE)
+    asyncio.run(view.update(before))
+    assert view.last_best == cell_index("A4")
+    after = parse_board(
+        "A1T* A2P* A3T A4G A5D* B1B* B2B* B4P B5B C1B D2L D3B D5G E1G E3B E5B"
+    )
+    embed, _ = asyncio.run(view.update(after))
+    assert (view.judged, view.followed) == (1, 0)
+    assert embed.title.startswith("Click ")
+    assert view.history[-1] == "BLUE"
