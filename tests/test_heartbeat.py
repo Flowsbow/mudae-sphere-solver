@@ -112,3 +112,30 @@ def test_a_failed_heartbeat_is_logged_and_the_next_one_still_runs(caplog, monkey
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(run_heartbeat(None, None, interval=0))
     assert caplog.messages[:2] == ["heartbeat failed", "ok"]
+
+
+def test_late_delivery_is_measured_from_discords_timestamps(caplog):
+    import datetime
+    import time as clock
+
+    from src.bot.auto import AutoGame, _late_by, _log_slow_reply
+    from src.bot.rewards import DISCORD_EPOCH_MS
+
+    now = datetime.datetime.now(datetime.UTC)
+    edited = type("M", (), {"id": 1, "edited_at": now - datetime.timedelta(seconds=40)})
+    assert 39 < _late_by(edited) < 42
+    posted_ms = int(clock.time() * 1000) - 3000
+    fresh = type("M", (), {"id": (posted_ms - DISCORD_EPOCH_MS) << 22})
+    assert 2 < _late_by(fresh) < 5
+
+    game = AutoGame(view=object(), reply=None, started=0, channel_id=1, server_id=None)
+    caplog.set_level(logging.INFO, logger="solver")
+    _log_slow_reply(game, "board", 0.5, clock.perf_counter())
+    assert caplog.messages == []
+    _log_slow_reply(game, "click", 40.2, clock.perf_counter())
+    assert caplog.messages == [
+        "slow reply $oc click: Discord delivered it 40.2s after Mudae posted it, "
+        "then the bot took 0.0s to solve, draw and send"
+    ]
+    _log_slow_reply(None, "board", 99.0, clock.perf_counter())
+    assert len(caplog.messages) == 1

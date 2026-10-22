@@ -1,6 +1,9 @@
+import time
+
 import discord
 from discord import app_commands
 
+from src.bot.auto import SLOW_REPLY_SECONDS, log
 from src.bot.commands import OcService, send_board
 from src.bot.oh import OhService, send_oh_board
 from src.bot.oq import OqService, send_oq_board
@@ -38,10 +41,25 @@ def register_manual(
         game: app_commands.Choice[str],
         board: str = "",
     ) -> None:
-        if game.value == "oq":
+        received = time.perf_counter()
+        sent_at = getattr(interaction, "created_at", None)
+        late = (discord.utils.utcnow() - sent_at).total_seconds() if sent_at else 0.0
+        await _send(interaction, game.value, board)
+        took = time.perf_counter() - received
+        if late + took >= SLOW_REPLY_SECONDS:
+            log.info(
+                "slow reply /manual-input $%s: Discord delivered it %.1fs after it "
+                "was sent, then the bot took %.1fs to solve, draw and send",
+                game.value,
+                late,
+                took,
+            )
+
+    async def _send(interaction: discord.Interaction, game: str, board: str) -> None:
+        if game == "oq":
             await send_oq_board(interaction, oq, board)
             return
-        if game.value == "oh":
+        if game == "oh":
             await send_oh_board(interaction, oh, board)
             return
         try:
