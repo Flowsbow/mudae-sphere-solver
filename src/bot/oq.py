@@ -25,7 +25,7 @@ from src.solver.modes.oq import (
     RED,
     RED_SHOWN,
 )
-from src.solver.oq_board import LETTERS, add_cells, parse_board
+from src.solver.oq_board import LETTERS, add_cells, mentions_rainbow, parse_board
 from src.solver.oq_ev import (
     EXACT_CLICKS,
     EXACT_MAX_PLACEMENTS,
@@ -321,6 +321,10 @@ class AddOqSphereModal(discord.ui.Modal, title="Add a sphere"):
                 f"Couldn't add that: {err}", ephemeral=True
             )
             return
+        if mentions_rainbow(self.sphere.value, view.last_best) and not view.rainbow:
+            view.use_rainbow(
+                view.service.payouts_for(view.owner_id, interaction.guild_id, True)
+            )
         await interaction.response.defer()
         try:
             embed, file = await view.update(codes)
@@ -348,6 +352,8 @@ async def send_oq_board(
     user_id = interaction.user.id
     payouts = service.payouts_for(user_id, interaction.guild_id)
     view = OqBoardView(service, codes, user_id, payouts)
+    if mentions_rainbow(board):
+        view.use_rainbow(service.payouts_for(user_id, interaction.guild_id, True))
     try:
         embed, file = await view.update(codes)
     except InconsistentBoardError as err:

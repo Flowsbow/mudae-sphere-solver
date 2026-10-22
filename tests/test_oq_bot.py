@@ -320,3 +320,27 @@ def test_third_purple_on_the_suggested_cell_with_the_red_elsewhere():
     codes = add_cells(codes, "P D4 R", suggested=cell_index("C3"))
     assert codes[cell_index("C3")] == PURPLE
     assert codes[cell_index("D4")] == RED_SHOWN
+
+
+def test_w_is_a_rainbow_shown_then_clicked():
+    from src.solver.modes.oq import RED, RED_SHOWN
+    from src.solver.oq_board import add_cells, mentions_rainbow, parse_board
+
+    codes = parse_board("A1P A2P A3P E5W")
+    assert codes[cell_index("E5")] == RED_SHOWN
+    assert mentions_rainbow("A1P A2P A3P E5W")
+    assert not mentions_rainbow("A1P A2P A3P E5R")
+    clicked = add_cells(codes, "W", cell_index("E5"))
+    assert clicked[cell_index("E5")] == RED
+    assert mentions_rainbow("W", cell_index("E5"))
+
+
+def test_manual_rainbow_is_valued_and_drawn_as_a_rainbow(service):
+    from src.solver.modes.oq import RAINBOW, RED
+
+    interaction = _run_oq(service, "A1P A2P A3P E5W")
+    ((_, sent),) = interaction.followup.sent
+    view = sent["view"]
+    assert view.rainbow
+    assert view.payouts[RED] == RAINBOW
+    assert sent["embed"].title == "Click E5"

@@ -210,7 +210,9 @@ def _star(cx: int, cy: int, r: int) -> list[tuple[float, float]]:
     ]
 
 
-def _rainbow_block(img: Image.Image, cell: int, outlined: bool = False) -> None:
+def _rainbow_block(
+    img: Image.Image, cell: int, outlined: bool = False, fade: float = 0.0
+) -> None:
     x0, y0, x1, y1 = _tile_box(cell)
     stripes = Image.new("RGB", img.size)
     stripe_draw = ImageDraw.Draw(stripes)
@@ -218,13 +220,14 @@ def _rainbow_block(img: Image.Image, cell: int, outlined: bool = False) -> None:
     for k, color in enumerate(RAINBOW):
         stripe_draw.rectangle(
             [x0, y0 + k * band, x1, y0 + (k + 1) * band],
-            fill=_mix(color, (0, 0, 0), BLOCK_DARKEN),
+            fill=_mix(_mix(color, (0, 0, 0), BLOCK_DARKEN), BACKGROUND, fade),
         )
     mask = Image.new("L", img.size, 0)
     ImageDraw.Draw(mask).rounded_rectangle([x0, y0, x1, y1], radius=_px(8), fill=255)
     img.paste(stripes, mask=mask)
     draw = ImageDraw.Draw(img)
-    draw.polygon(_star((x0 + x1) // 2, (y0 + y1) // 2, _px(18)), fill=(255, 255, 255))
+    star = _mix((255, 255, 255), BACKGROUND, fade)
+    draw.polygon(_star((x0 + x1) // 2, (y0 + y1) // 2, _px(18)), fill=star)
     if outlined:
         draw.rounded_rectangle(
             [x0, y0, x1, y1], radius=_px(8), outline=BEST_OUTLINE, width=_px(3)
@@ -288,11 +291,12 @@ def render_oh(board: OhBoard, advice: OhAdvice | None = None) -> bytes:
     img, draw, size = _canvas()
     for cell, letter in enumerate(board.cells):
         best = advice is not None and cell == advice.best
-        if letter == "W" and cell not in board.clicked:
-            _rainbow_block(img, cell, outlined=best)
+        if letter == "W":
+            fade = CLICKED_FADE if cell in board.clicked else 0.0
+            _rainbow_block(img, cell, outlined=best, fade=fade)
             draw = ImageDraw.Draw(img)
         elif letter is not None:
-            color = RAINBOW[0] if letter == "W" else OH_COLOR[letter]
+            color = OH_COLOR[letter]
             if cell in board.clicked:
                 color = _mix(color, BACKGROUND, CLICKED_FADE)
             _block(draw, cell, color, letter, outlined=best)

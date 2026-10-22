@@ -10,8 +10,19 @@ from src.solver.oq_ev import HIDDEN
 
 # Mudae's $oq rules text: "Blue = 0, teal = 1, green = 2, yellow = 3, orange = 4".
 # R is the red sphere: typed on a hidden cell it means "shown, not clicked yet";
-# typed again on that cell it means "clicked".
-LETTER_CODE = {"B": 0, "T": 1, "G": 2, "Y": 3, "O": 4, "P": PURPLE, "R": RED_SHOWN}
+# typed again on that cell it means "clicked". W is the same for a rainbow, which
+# sometimes replaces the red (Flow, 2026-10-05).
+LETTER_CODE = {
+    "B": 0,
+    "T": 1,
+    "G": 2,
+    "Y": 3,
+    "O": 4,
+    "P": PURPLE,
+    "R": RED_SHOWN,
+    "W": RED_SHOWN,
+}
+FOURTH_PURPLE_LETTERS = ("R", "W")
 LETTERS = " ".join(LETTER_CODE)
 
 
@@ -68,7 +79,7 @@ def add_cells(
         raise BoardInputError("type a cell and a color, like C4 G")
     new = list(codes)
     for cell, letter in tokens:
-        if new[cell] == RED_SHOWN and letter == "R":
+        if new[cell] == RED_SHOWN and letter in FOURTH_PURPLE_LETTERS:
             new[cell] = RED
         elif new[cell] != HIDDEN:
             raise BoardInputError(f"{cell_name(cell)} is already revealed")
@@ -76,3 +87,9 @@ def add_cells(
             new[cell] = LETTER_CODE[letter]
     check(tuple(new))
     return tuple(new)
+
+
+def mentions_rainbow(text: str, suggested: int | None = None) -> bool:
+    """Whether typed cells include a rainbow (W) as the 4th purple."""
+    tokens = _tokens(with_suggested_cell(text, suggested))
+    return any(letter == "W" for _, letter in tokens)
