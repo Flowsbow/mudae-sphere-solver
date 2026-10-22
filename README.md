@@ -10,7 +10,7 @@ minigames and shows the numbers behind each recommendation.
 **Contents:** [Status](#status) · [Using the bot](#using-the-bot) · [`$oc`](#oc) ·
 [`$oq`](#oq) · [`$oh`](#oh) · [Stats and privacy](#stats-and-privacy) ·
 [Running your own copy](#running-your-own-copy) · [Development](#development) ·
-[License](#license) · [Privacy policy](PRIVACY.md)
+[License](#license) · [Privacy policy](PRIVACY.md) · [Terms of service](TERMS.md)
 
 ## Status
 
