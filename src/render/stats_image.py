@@ -6,7 +6,7 @@ import io
 
 from PIL import Image, ImageDraw
 
-from src.bot.totals import OcTotals, OhTotals, OqTotals, Running, Totals
+from src.bot.totals import Running, Totals
 from src.render.board_image import (
     BACKGROUND,
     DIM,
@@ -164,7 +164,13 @@ def _heatmap(c: _Canvas, red_cells: list[int], x: int, y: int) -> None:
 
 
 def _clicked(
-    c: _Canvas, title: str, counts: dict[str, int], x: int, y: int, w: int
+    c: _Canvas,
+    title: str,
+    counts: dict[str, int],
+    x: int,
+    y: int,
+    w: int,
+    per_row: int = 3,
 ) -> int:
     c.text(x, y, title, 12, DIM)
     y += 20
@@ -178,26 +184,43 @@ def _clicked(
     if not total:
         c.box(x, y, w, 16, TILE_COLOR, 3)
     y += 26
-    column = w / 3
+    column = w / per_row
     for k, (label, count) in enumerate(counts.items()):
-        lx, ly = x + (k % 3) * column, y + (k // 3) * 22
+        lx, ly = x + (k % per_row) * column, y + (k // per_row) * 22
         c.swatch(lx, ly, 10, 10, label)
         name = LABEL_NAME.get(label, label.title())
         c.text(lx + 15, ly + 5, f"{name} {count:,}", 11, anchor="lm")
-    rows = (len(counts) + 2) // 3
-    return y + rows * 22 + 10
+    return y + _legend_rows(counts, per_row) * 22 + 10
+
+
+def _legend_rows(counts: dict[str, int], per_row: int) -> int:
+    return -(-len(counts) // per_row)
+
+
+def _clicked_height(counts: dict[str, int], per_row: int = 3) -> int:
+    return 20 + 26 + _legend_rows(counts, per_row) * 22 + 10
 
 
 HEATMAP_WIDTH = 214
+HEATMAP_HEIGHT = 20 + 16 + 5 * 34 + 10
+# $oh has 11 colors, too many for the column beside the heatmap: it gets a
+# full-width row below, 6 per legend row.
+OH_PER_ROW = 6
 
 
-def _body_height(oc: OcTotals, oq: OqTotals, oh: OhTotals) -> int:
-    bars = 0
-    for totals in (oc, oq, oh):
-        if totals.games:
-            bars += 20 + 26 + ((len(totals.clicked) + 2) // 3) * 22 + 10
-    heat = 20 + 16 + 5 * 34 + 10 if oc.games else 0
-    return max(bars, heat)
+def _beside_heatmap(totals: Totals) -> list[tuple[str, dict[str, int]]]:
+    return [
+        (name, part.clicked)
+        for name, part in (("$oc", totals.oc), ("$oq", totals.oq))
+        if part.games
+    ]
+
+
+def _body_height(totals: Totals) -> int:
+    beside = sum(_clicked_height(counts) for _, counts in _beside_heatmap(totals))
+    heat = HEATMAP_HEIGHT if totals.oc.games else 0
+    below = _clicked_height(totals.oh.clicked, OH_PER_ROW) if totals.oh.games else 0
+    return max(beside, heat) + below
 
 
 def render_stats(totals: Totals) -> bytes | None:
@@ -205,16 +228,19 @@ def render_stats(totals: Totals) -> bytes | None:
     rows = _rows(totals)
     if not rows:
         return None
-    oc, oq, oh = totals.oc, totals.oq, totals.oh
-    height = 16 + 36 + 48 * len(rows) + 12 + _body_height(oc, oq, oh) + 8
+    height = 16 + 36 + 48 * len(rows) + 12 + _body_height(totals) + 8
     c = _Canvas(height)
-    y = _scoreboard(c, rows, 16) + 12
+    top = _scoreboard(c, rows, 16) + 12
     x = 16
-    if oc.games:
-        _heatmap(c, oc.red_cells, 10, y)
+    if totals.oc.games:
+        _heatmap(c, totals.oc.red_cells, 10, top)
         x = 16 + HEATMAP_WIDTH
-    width = WIDTH - x - 16
-    for name, part in (("$oc", oc), ("$oq", oq), ("$oh", oh)):
-        if part.games:
-            y = _clicked(c, f"{name}: spheres clicked", part.clicked, x, y, width)
+    y = top
+    for name, counts in _beside_heatmap(totals):
+        y = _clicked(c, f"{name}: spheres clicked", counts, x, y, WIDTH - x - 16)
+    if totals.oc.games:
+        y = max(y, top + HEATMAP_HEIGHT)
+    if totals.oh.games:
+        title = "$oh: spheres clicked"
+        _clicked(c, title, totals.oh.clicked, 16, y, WIDTH - 32, OH_PER_ROW)
     return c.png()
